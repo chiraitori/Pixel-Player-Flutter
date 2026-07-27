@@ -28,6 +28,12 @@ class GenreCategoriesGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final grid = controller.boolSetting('search_genre_grid', true);
+    final systemBottomInset = MediaQuery.viewPaddingOf(
+      context,
+    ).bottom.clamp(0.0, 96.0);
+    final navigationBarHeight = controller.navBarCompactMode ? 64.0 : 90.0;
+    final bottomContentPadding =
+        28.0 + navigationBarHeight + systemBottomInset + 64.0;
     if (genres.isEmpty) {
       return const Center(child: Text('No genres available'));
     }
@@ -35,7 +41,7 @@ class GenreCategoriesGrid extends StatelessWidget {
       children: [
         if (selectedGenres.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 18, 4),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
               children: [
                 Container(
@@ -71,58 +77,95 @@ class GenreCategoriesGrid extends StatelessWidget {
               ],
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 6, 18, 6),
-          child: Row(
-            children: [
-              Text(
-                'Browse by genre',
-                style: Theme.of(context).textTheme.titleLarge,
+        Expanded(
+          child: ClipPath(
+            clipper: ShapeBorderClipper(
+              shape: const RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              const Spacer(),
-              IconButton.filledTonal(
-                onPressed: () =>
-                    controller.setBoolSetting('search_genre_grid', !grid),
-                style: IconButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(grid ? 50 : 12),
+            ),
+            child: CustomScrollView(
+              key: const PageStorageKey('genre-categories-scroll'),
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(18, 20, 18, 0),
+                  sliver: SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 6, 0, 6),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Browse by genre',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const Spacer(),
+                          TweenAnimationBuilder<double>(
+                            tween: Tween(end: grid ? 50 : 12),
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.fastOutSlowIn,
+                            builder: (context, radius, child) =>
+                                IconButton.filledTonal(
+                                  onPressed: () => controller.setBoolSetting(
+                                    'search_genre_grid',
+                                    !grid,
+                                  ),
+                                  style: IconButton.styleFrom(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        radius,
+                                      ),
+                                    ),
+                                  ),
+                                  icon: child!,
+                                  tooltip: grid ? 'List view' : 'Grid view',
+                                ),
+                            child: Icon(
+                              grid
+                                  ? Icons.view_list_rounded
+                                  : Icons.grid_view_rounded,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-                icon: Icon(
-                  grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(18, 0, 18, bottomContentPadding),
+                  sliver: SliverGrid(
+                    gridDelegate: grid
+                        ? const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            childAspectRatio: 1.2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                          )
+                        : const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 1,
+                            mainAxisExtent: 100,
+                            mainAxisSpacing: 12,
+                          ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final genre = genres[index];
+                      return _GenreCard(
+                        genre: genre,
+                        grid: grid,
+                        selected: selectedGenres.contains(genre),
+                        selectionIndex: selectedGenres.indexOf(genre) + 1,
+                        onTap: () {
+                          if (selectedGenres.isNotEmpty) {
+                            onSelectionToggle(genre);
+                          } else {
+                            onGenreClick(genre);
+                          }
+                        },
+                        onLongPress: () => onSelectionToggle(genre),
+                      );
+                    }, childCount: genres.length),
+                  ),
                 ),
-                tooltip: grid ? 'List view' : 'Grid view',
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(18, 8, 18, 224),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: grid ? 2 : 1,
-              childAspectRatio: grid ? 1.2 : 3.6,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
+              ],
             ),
-            itemCount: genres.length,
-            itemBuilder: (context, index) {
-              final genre = genres[index];
-              return _GenreCard(
-                genre: genre,
-                grid: grid,
-                selected: selectedGenres.contains(genre),
-                selectionIndex: selectedGenres.indexOf(genre) + 1,
-                onTap: () {
-                  if (selectedGenres.isNotEmpty) {
-                    onSelectionToggle(genre);
-                  } else {
-                    onGenreClick(genre);
-                  }
-                },
-                onLongPress: () => onSelectionToggle(genre),
-              );
-            },
           ),
         ),
       ],
@@ -230,8 +273,8 @@ class _GenreCard extends StatelessWidget {
           child: Stack(
             children: [
               Positioned(
-                right: -14,
-                bottom: -14,
+                right: -16,
+                bottom: -16,
                 child: Icon(
                   genreIconFor(genre),
                   size: 90,

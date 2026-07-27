@@ -18,7 +18,9 @@ const double miniPlayerBottomSpacer = 8;
 enum _DismissDragPhase { idle, tension, freeDrag }
 
 class MiniPlayer extends StatefulWidget {
-  const MiniPlayer({super.key});
+  const MiniPlayer({super.key, this.isStandalone = false});
+
+  final bool isStandalone;
 
   @override
   State<MiniPlayer> createState() => _MiniPlayerState();
@@ -173,12 +175,10 @@ class _MiniPlayerState extends State<MiniPlayer>
         : systemInset > 30
         ? 14.0
         : systemInset;
-    final topRadius = controller.navBarStyle == PixelNavBarStyle.fullWidth
-        ? 32.0
-        : controller.navBarCornerRadius;
+    final topRadius = 32.0;
     final bottomRadius = controller.navBarStyle == PixelNavBarStyle.fullWidth
         ? 32.0
-        : controller.navBarCornerRadius;
+        : (widget.isStandalone ? controller.navBarCornerRadius : 10.0);
     final miniPlayerBorderRadius = BorderRadius.vertical(
       top: Radius.circular(topRadius),
       bottom: Radius.circular(bottomRadius),

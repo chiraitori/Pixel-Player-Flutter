@@ -7,6 +7,8 @@ import '../../shared/widgets/artwork.dart';
 import '../../shared/widgets/playlist_cover.dart';
 import '../../shared/widgets/playlist_multi_selection_sheet.dart';
 import '../../shared/widgets/song_tile.dart';
+import '../player/mini_player.dart';
+import '../shell/player_internal_navigation_bar.dart';
 import 'widgets/genre_categories_grid.dart';
 
 enum _SearchFilter { all, songs, albums, artists, playlists }
@@ -62,13 +64,21 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final app = AppScope.of(context);
+    final colors = Theme.of(context).colorScheme;
     final query = _controller.text.trim().toLowerCase();
     final searching = query.isNotEmpty;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final selectionCount =
         _selectedSongs.length +
         _selectedAlbums.length +
         _selectedPlaylists.length +
         _selectedGenres.length;
+    final bottomGradientHeight =
+        resolveNavBarContentHeight(app.navBarCompactMode) +
+        miniPlayerHeight +
+        miniPlayerBottomSpacer +
+        8;
     return PopScope(
       canPop: selectionCount == 0,
       onPopInvokedWithResult: (didPop, result) {
@@ -76,83 +86,220 @@ class _SearchScreenState extends State<SearchScreen> {
           setState(_clearSelection);
         }
       },
-      child: CustomScrollView(
-        key: const PageStorageKey('search-scroll'),
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            toolbarHeight: 80,
-            titleSpacing: 24,
-            surfaceTintColor: Colors.transparent,
-            title: SearchBar(
-              controller: _controller,
-              focusNode: _focusNode,
-              hintText: 'Search…',
-              onSubmitted: AppScope.of(context).addSearchHistory,
-              leading: const Icon(Icons.search_rounded),
-              backgroundColor: WidgetStatePropertyAll(
-                Theme.of(
-                  context,
-                ).colorScheme.primaryContainer.withValues(alpha: .3),
-              ),
-              elevation: const WidgetStatePropertyAll(0),
-              trailing: [
-                if (_controller.text.isEmpty &&
-                    AppScope.of(context).searchHistory.isNotEmpty)
-                  IconButton(
-                    onPressed: _showSearchHistory,
-                    icon: const Icon(Icons.history_rounded),
-                    tooltip: 'Recent searches',
-                  ),
-                if (_controller.text.isNotEmpty)
-                  IconButton(
-                    onPressed: _controller.clear,
-                    icon: const Icon(Icons.close_rounded),
-                    tooltip: 'Clear',
-                  ),
-              ],
-            ),
-            actions: [
-              IconButton.filled(
-                onPressed: widget.onOpenSettings,
-                icon: const Icon(Icons.settings_rounded),
-                tooltip: 'Settings',
-              ),
-              const SizedBox(width: 18),
-            ],
-          ),
-          if (searching) SliverToBoxAdapter(child: _filterBar()),
-          if (!searching)
-            SliverFillRemaining(
-              child: GenreCategoriesGrid(
-                genres:
-                    AppScope.of(
-                      context,
-                    ).songs.map((song) => song.genre).toSet().toList()..sort(
-                      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+      child: Stack(
+        children: [
+          ColoredBox(
+            color: colors.surface,
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: SearchBar(
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            constraints: const BoxConstraints.tightFor(
+                              height: 56,
+                            ),
+                            hintText: 'Search…',
+                            onSubmitted: app.addSearchHistory,
+                            leading: Icon(
+                              Icons.search_rounded,
+                              size: 24,
+                              color: colors.primary,
+                            ),
+                            trailing: [
+                              if (_controller.text.isNotEmpty)
+                                IconButton(
+                                  onPressed: _controller.clear,
+                                  style: IconButton.styleFrom(
+                                    fixedSize: const Size.square(48),
+                                    backgroundColor: colors.primaryContainer
+                                        .withValues(alpha: .2),
+                                    foregroundColor: colors.primary,
+                                  ),
+                                  icon: const Icon(Icons.close_rounded),
+                                  tooltip: 'Clear',
+                                ),
+                            ],
+                            textStyle: WidgetStatePropertyAll(
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: colors.onSurface,
+                              ),
+                            ),
+                            hintStyle: WidgetStatePropertyAll(
+                              Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                color: colors.primary,
+                              ),
+                            ),
+                            shape: WidgetStatePropertyAll(
+                              RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                            ),
+                            backgroundColor: WidgetStatePropertyAll(
+                              colors.primaryContainer.withValues(alpha: .3),
+                            ),
+                            elevation: const WidgetStatePropertyAll(0),
+                            surfaceTintColor: const WidgetStatePropertyAll(
+                              Colors.transparent,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: IconButton.filled(
+                            onPressed: widget.onOpenSettings,
+                            style: IconButton.styleFrom(
+                              backgroundColor: colors.primaryContainer,
+                              foregroundColor: colors.onPrimaryContainer,
+                            ),
+                            icon: const Icon(Icons.settings_rounded),
+                            tooltip: 'Settings',
+                          ),
+                        ),
+                      ],
                     ),
-                selectedGenres: _selectedGenres,
-                onGenreClick: widget.onOpenGenre,
-                onSelectionToggle: _toggleGenreSelection,
-                onSelectAll: () => setState(() {
-                  _selectedGenres
-                    ..clear()
-                    ..addAll(
-                      AppScope.of(
-                        context,
-                      ).songs.map((song) => song.genre).toSet(),
-                    );
-                }),
-                onClearSelection: () => setState(_clearSelection),
-                onSelectionOptions: _showSelectedGenreOptions,
+                  ),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 320),
+                      reverseDuration: reduceMotion
+                          ? Duration.zero
+                          : const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      layoutBuilder: (currentChild, previousChildren) => Stack(
+                        alignment: Alignment.topCenter,
+                        children: [...previousChildren, ?currentChild],
+                      ),
+                      transitionBuilder: (child, animation) {
+                        final enteringFrom = searching
+                            ? const Offset(0, .1)
+                            : const Offset(0, -.1);
+                        return FadeTransition(
+                          opacity: animation,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: enteringFrom,
+                              end: Offset.zero,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: searching
+                          ? _searchResultsMode(query)
+                          : GenreCategoriesGrid(
+                              key: const ValueKey('genre-browse-mode'),
+                              genres:
+                                  app.songs
+                                      .map((song) => song.genre)
+                                      .toSet()
+                                      .toList()
+                                    ..sort(
+                                      (a, b) => a.toLowerCase().compareTo(
+                                        b.toLowerCase(),
+                                      ),
+                                    ),
+                              selectedGenres: _selectedGenres,
+                              onGenreClick: widget.onOpenGenre,
+                              onSelectionToggle: _toggleGenreSelection,
+                              onSelectAll: () => setState(() {
+                                _selectedGenres
+                                  ..clear()
+                                  ..addAll(
+                                    app.songs.map((song) => song.genre).toSet(),
+                                  );
+                              }),
+                              onClearSelection: () => setState(_clearSelection),
+                              onSelectionOptions: _showSelectedGenreOptions,
+                            ),
+                    ),
+                  ),
+                ],
               ),
-            )
-          else
-            ..._results(query),
-          const SliverToBoxAdapter(child: SizedBox(height: 224)),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: bottomGradientHeight,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, .2, .8, 1],
+                    colors: [
+                      Colors.transparent,
+                      Colors.transparent,
+                      colors.surfaceContainerLowest,
+                      colors.surfaceContainerLowest,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Widget _searchResultsMode(String query) {
+    return Padding(
+      key: const ValueKey('search-results-mode'),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          _filterBar(),
+          Expanded(
+            child: ClipPath(
+              clipper: ShapeBorderClipper(
+                shape: const RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+              ),
+              child: CustomScrollView(
+                key: const PageStorageKey('search-results-scroll'),
+                slivers: [
+                  ..._results(query),
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: _resultsBottomPadding()),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _resultsBottomPadding() {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    if (keyboardInset > 8) return keyboardInset;
+    final controller = AppScope.of(context);
+    final systemInset = sanitizeNavigationBarBottomInset(
+      MediaQuery.viewPaddingOf(context).bottom,
+    );
+    return resolveNavBarOccupiedHeight(
+          systemInset: systemInset,
+          compactMode: controller.navBarCompactMode,
+        ) +
+        miniPlayerHeight +
+        28;
   }
 
   Widget _filterBar() {
@@ -182,7 +329,7 @@ class _SearchScreenState extends State<SearchScreen> {
           .where((playlist) => _matches(query, [playlist.name]))
           .toList();
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
             Container(
@@ -233,7 +380,7 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: Wrap(
         spacing: 8,
         children: [
@@ -242,83 +389,20 @@ class _SearchScreenState extends State<SearchScreen> {
               selected: _filter == filter,
               onSelected: (_) => setState(() => _filter = filter),
               showCheckmark: true,
+              shape: const StadiumBorder(),
+              side: BorderSide.none,
+              backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+              selectedColor: Theme.of(context).colorScheme.primary,
+              checkmarkColor: Theme.of(context).colorScheme.onPrimary,
+              labelStyle: TextStyle(
+                color: _filter == filter
+                    ? Theme.of(context).colorScheme.onPrimary
+                    : Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
               label: Text(_label(filter)),
             ),
         ],
       ),
-    );
-  }
-
-  Widget _searchHistory() {
-    final colors = Theme.of(context).colorScheme;
-    final controller = AppScope.of(context);
-    final history = controller.searchHistory;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Recent searches',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: controller.clearSearchHistory,
-                child: const Text('Clear all'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (history.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 60),
-              child: Center(
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.manage_search_rounded,
-                      size: 66,
-                      color: colors.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 14),
-                    const Text('Your recent searches will appear here'),
-                  ],
-                ),
-              ),
-            )
-          else
-            for (final item in history)
-              ListTile(
-                leading: const Icon(Icons.history_rounded),
-                title: Text(item),
-                trailing: IconButton(
-                  onPressed: () => controller.removeSearchHistory(item),
-                  icon: const Icon(Icons.close_rounded),
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                onTap: () {
-                  _controller.text = item;
-                  _controller.selection = TextSelection.collapsed(
-                    offset: item.length,
-                  );
-                },
-              ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showSearchHistory() {
-    return showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) =>
-          SafeArea(child: SingleChildScrollView(child: _searchHistory())),
     );
   }
 
