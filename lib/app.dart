@@ -11,11 +11,13 @@ class PixelPlayApp extends StatefulWidget {
   const PixelPlayApp({
     this.skipSetup = false,
     this.platformServicesEnabled = true,
+    this.platformServicesReady,
     super.key,
   });
 
   final bool skipSetup;
   final bool platformServicesEnabled;
+  final Future<void>? platformServicesReady;
 
   @override
   State<PixelPlayApp> createState() => _PixelPlayAppState();
@@ -30,8 +32,10 @@ class _PixelPlayAppState extends State<PixelPlayApp> {
   @override
   void initState() {
     super.initState();
-    _controller = AppController(setupComplete: widget.skipSetup)
-      ..addListener(_refresh);
+    _controller = AppController(
+      setupComplete: widget.skipSetup,
+      platformServicesReady: widget.platformServicesReady,
+    )..addListener(_refresh);
     _themeMode = _controller.themeMode;
     _initialized = _controller.initialized;
     _setupComplete = _controller.setupComplete;

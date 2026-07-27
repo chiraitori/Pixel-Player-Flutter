@@ -392,7 +392,13 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('DAILY\nMIX'), findsOneWidget);
+    expect(find.text('Daily Mix'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('daily-mix-header'))).height,
+      340,
+    );
+    expect(find.byKey(const ValueKey('daily-mix-back')), findsOneWidget);
+    expect(find.text('Play it'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -474,6 +480,50 @@ void main() {
     expect(find.text('Artists'), findsWidgets);
     expect(find.byType(SearchResultMediaCard), findsWidgets);
     expect(tester.getSize(find.byType(SearchResultMediaCard).first).height, 80);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Search fits landscape with reduced motion and 1.3x text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true)
+      ..songs = MockLibrary.songs
+      ..libraryLoading = false;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              disableAnimations: true,
+              textScaler: const TextScaler.linear(1.3),
+            ),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: SearchScreen(
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onOpenSettings: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.enterText(find.byType(SearchBar), 'Luna');
+    await tester.pumpAndSettle();
+
+    expect(find.text('Afterglow'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

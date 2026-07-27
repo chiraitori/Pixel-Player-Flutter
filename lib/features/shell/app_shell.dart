@@ -327,6 +327,9 @@ class AppShell extends StatelessWidget {
   }
 
   void _openSpecialty(BuildContext context, String route) {
+    if (route == 'transition') {
+      AppScope.of(context).setStringSetting('transition_playlist_id', '');
+    }
     final screen = switch (route) {
       'palette' => const PaletteStyleScreen(),
       'navbar' => const NavBarCornerRadiusScreen(),

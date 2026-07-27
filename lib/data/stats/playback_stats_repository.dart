@@ -52,6 +52,7 @@ class PlaybackStatsSnapshot {
     required this.weekdayAveragePlay,
     required this.genreShares,
     required this.songPlayCounts,
+    required this.songListeningDurations,
   });
 
   final int playCount;
@@ -68,6 +69,7 @@ class PlaybackStatsSnapshot {
   final List<Duration> weekdayAveragePlay;
   final List<(String, double)> genreShares;
   final Map<String, int> songPlayCounts;
+  final Map<String, Duration> songListeningDurations;
 }
 
 class PlaybackStatsRepository {
@@ -114,6 +116,7 @@ class PlaybackStatsRepository {
     final hourBuckets = List<Duration>.filled(6, Duration.zero);
     final genreDurations = <String, Duration>{};
     final songPlayCounts = <String, int>{};
+    final songListeningDurations = <String, Duration>{};
     for (final event in filtered) {
       final duration = _effectiveDuration(event, byId[event.songId]);
       weekday[event.startedAt.weekday - 1] += duration;
@@ -124,6 +127,11 @@ class PlaybackStatsRepository {
         event.songId,
         (value) => value + 1,
         ifAbsent: () => 1,
+      );
+      songListeningDurations.update(
+        event.songId,
+        (value) => value + duration,
+        ifAbsent: () => duration,
       );
       if (genre != null && genre.isNotEmpty) {
         genreDurations.update(
@@ -190,6 +198,7 @@ class PlaybackStatsRepository {
       ],
       genreShares: genreShares.take(4).toList(growable: false),
       songPlayCounts: songPlayCounts,
+      songListeningDurations: songListeningDurations,
     );
   }
 

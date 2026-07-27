@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/song.dart';
 import '../../core/state/app_controller.dart';
+import '../../core/theme/rounded_star_clipper.dart';
 import '../player/full_player.dart';
 import '../player/mini_player.dart';
 import '../../shared/widgets/artwork.dart';
@@ -52,22 +53,12 @@ class DailyMixScreen extends StatelessWidget {
                         : const _DailyMixEmptyState()
                   : CustomScrollView(
                       slivers: [
-                        SliverAppBar(
-                          pinned: true,
-                          backgroundColor: Colors.transparent,
-                          surfaceTintColor: Colors.transparent,
-                          title: const Text('Daily Mix'),
-                          actions: [
-                            IconButton(
-                              onPressed: () =>
-                                  _showMenu(context, controller, songs),
-                              icon: const Icon(Icons.auto_awesome_rounded),
-                              tooltip: 'Daily Mix options',
-                            ),
-                          ],
-                        ),
                         SliverToBoxAdapter(
-                          child: _DailyMixHeader(songs: songs),
+                          child: _DailyMixHeader(
+                            songs: songs,
+                            onShowMenu: () =>
+                                _showMenu(context, controller, songs),
+                          ),
                         ),
                         if (controller.dailyMixGenerating ||
                             controller.dailyMixAiStatus != null ||
@@ -79,7 +70,7 @@ class DailyMixScreen extends StatelessWidget {
                         SliverList.builder(
                           itemCount: songs.length,
                           itemBuilder: (context, index) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: SongTile(song: songs[index], queue: songs),
                           ),
                         ),
@@ -95,6 +86,61 @@ class DailyMixScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 0,
+              height: 50,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        colors.surfaceContainerLowest.withValues(alpha: .5),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: 80,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        colors.surfaceContainerLowest.withValues(alpha: .5),
+                        colors.surfaceContainerLowest,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              top: MediaQuery.paddingOf(context).top + 8,
+              child: IconButton.filled(
+                key: const ValueKey('daily-mix-back'),
+                onPressed: () => Navigator.maybePop(context),
+                style: IconButton.styleFrom(
+                  backgroundColor: colors.surface,
+                  foregroundColor: colors.onSurface,
+                ),
+                icon: const Icon(Icons.arrow_back_rounded),
+                tooltip: 'Back',
+              ),
             ),
             if (miniVisible && !controller.fullPlayerVisible)
               Positioned(
@@ -321,91 +367,188 @@ class _AiMixStatus extends StatelessWidget {
 }
 
 class _DailyMixHeader extends StatelessWidget {
-  const _DailyMixHeader({required this.songs});
+  const _DailyMixHeader({required this.songs, required this.onShowMenu});
 
   final List<Song> songs;
+  final VoidCallback onShowMenu;
 
   @override
   Widget build(BuildContext context) {
-    final art = List.generate(
-      4,
-      (index) => songs[index % songs.length],
-      growable: false,
+    final colors = Theme.of(context).colorScheme;
+    final distinct = <Song>[];
+    final albumIds = <int?>{};
+    for (final song in songs) {
+      if (albumIds.add(song.albumId)) distinct.add(song);
+      if (distinct.length == 3) break;
+    }
+    final duration = songs.fold<Duration>(
+      Duration.zero,
+      (total, song) => total + song.duration,
     );
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 390;
-        final artworkSize = compact ? 176.0 : 190.0;
-        final artwork = SizedBox(
-          width: artworkSize,
-          height: artworkSize,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(34),
-            child: GridView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+    return SizedBox(
+      key: const ValueKey('daily-mix-header'),
+      height: 340,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final centerX = constraints.maxWidth / 2;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              for (var index = 0; index < distinct.length; index++)
+                Positioned(
+                  left:
+                      centerX +
+                      const [-100.0, 0.0, 100.0][index] -
+                      const [180.0, 220.0, 180.0][index] / 2,
+                  top: (245 - const [180.0, 220.0, 180.0][index]) / 2 + 8,
+                  child: Transform.rotate(
+                    angle: const [-.261799, 0.0, .261799][index],
+                    child: _DailyMixArtworkShape(
+                      index: index,
+                      song: distinct[index],
+                      size: const [180.0, 220.0, 180.0][index],
+                    ),
+                  ),
+                ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        colors.surface.withValues(alpha: .1),
+                        Colors.transparent,
+                        colors.surface.withValues(alpha: .5),
+                        colors.surface.withValues(alpha: .9),
+                        colors.surface,
+                      ],
+                      stops: const [0, .2, .55, .78, 1],
+                    ),
+                  ),
+                ),
               ),
-              itemCount: art.length,
-              itemBuilder: (context, index) => Artwork(
-                colors: art[index].colors,
-                borderRadius: 0,
-                mediaStoreId: art[index].mediaStoreId,
-              ),
-            ),
-          ),
-        );
-        final metadata = _DailyMixMetadata(songCount: songs.length);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 18),
-          child: compact
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Positioned(
+                left: 22,
+                right: 22,
+                bottom: 0,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Center(child: artwork),
-                    const SizedBox(height: 18),
-                    metadata,
-                  ],
-                )
-              : Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    artwork,
-                    const SizedBox(width: 18),
-                    Expanded(child: metadata),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Daily Mix',
+                              style: const TextStyle(
+                                fontFamily: 'GoogleSansFlex',
+                                fontSize: 44,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 3),
+                              child: Text(
+                                '${songs.length} songs • ${_formatMixDuration(duration)}',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                      color: colors.onSurface.withValues(
+                                        alpha: .8,
+                                      ),
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    _DailyMixAiButton(onPressed: onShowMenu),
                   ],
                 ),
-        );
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _DailyMixArtworkShape extends StatelessWidget {
+  const _DailyMixArtworkShape({
+    required this.index,
+    required this.song,
+    required this.size,
+  });
+
+  final int index;
+  final Song song;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final artwork = Artwork(
+      colors: song.colors,
+      size: size,
+      borderRadius: 0,
+      mediaStoreId: song.mediaStoreId,
+    );
+    return SizedBox.square(
+      dimension: size,
+      child: switch (index) {
+        0 => ClipPath(
+          clipper: const RoundedStarClipper(sides: 6, curve: .05, rotation: 10),
+          child: artwork,
+        ),
+        1 => ClipOval(child: artwork),
+        _ => ClipRRect(borderRadius: BorderRadius.circular(30), child: artwork),
       },
     );
   }
 }
 
-class _DailyMixMetadata extends StatelessWidget {
-  const _DailyMixMetadata({required this.songCount});
+class _DailyMixAiButton extends StatelessWidget {
+  const _DailyMixAiButton({required this.onPressed});
 
-  final int songCount;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'DAILY\nMIX',
-          style: Theme.of(context).textTheme.displaySmall?.copyWith(
-            fontFamily: 'Genre',
-            height: .9,
-            fontWeight: FontWeight.w900,
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: 'AI playlist generator',
+      child: ClipPath(
+        clipper: const RoundedStarClipper(sides: 8, curve: .05),
+        child: Material(
+          color: colors.primaryContainer,
+          child: InkWell(
+            onTap: onPressed,
+            child: SizedBox.square(
+              dimension: 96,
+              child: Icon(
+                Icons.auto_awesome_rounded,
+                size: 20,
+                color: colors.onPrimaryContainer,
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 10),
-        Text('$songCount songs • Refreshed today'),
-      ],
+      ),
     );
   }
+}
+
+String _formatMixDuration(Duration duration) {
+  if (duration.inHours > 0) {
+    return '${duration.inHours} hr ${duration.inMinutes.remainder(60)} min';
+  }
+  return '${duration.inMinutes} min';
 }
 
 class _DailyMixEmptyState extends StatelessWidget {
@@ -453,9 +596,9 @@ class _PlayButtons extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     return SizedBox(
-      height: 84,
+      height: 76,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Row(
           children: [
             Expanded(
@@ -463,7 +606,7 @@ class _PlayButtons extends StatelessWidget {
                 onPressed: () =>
                     controller.playSong(songs.first, fromQueue: songs),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(76),
+                  minimumSize: const Size.fromHeight(60),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.only(
                       topLeft: Radius.circular(60),
@@ -482,7 +625,7 @@ class _PlayButtons extends StatelessWidget {
               child: FilledButton.tonalIcon(
                 onPressed: () => controller.playShuffled(songs),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(76),
+                  minimumSize: const Size.fromHeight(60),
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.only(
                       topLeft: Radius.circular(14),

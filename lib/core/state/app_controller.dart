@@ -15,6 +15,7 @@ import '../services/audio_meta_service.dart';
 import '../services/google_cast_service.dart';
 import '../services/song_metadata_writer.dart';
 import '../../data/library/media_store_music_library.dart';
+import '../../data/library/music_library_cache.dart';
 import '../../data/library/music_library_repository.dart';
 import '../../data/mixes/daily_mix_manager.dart';
 import '../../data/providers/google_drive/google_drive_api_service.dart';
@@ -37,11 +38,24 @@ class AppController extends ChangeNotifier {
     'prod.',
     'prod',
   ];
-  factory AppController({bool setupComplete = false}) {
-    return AppController._(setupComplete);
+  factory AppController({
+    bool setupComplete = false,
+    MusicLibraryCache? musicLibraryCache,
+    Future<void>? platformServicesReady,
+  }) {
+    return AppController._(
+      setupComplete,
+      musicLibraryCache: musicLibraryCache,
+      platformServicesReady: platformServicesReady,
+    );
   }
 
-  AppController._(this._setupComplete) {
+  AppController._(
+    this._setupComplete, {
+    MusicLibraryCache? musicLibraryCache,
+    Future<void>? platformServicesReady,
+  }) : _musicLibraryCache = musicLibraryCache ?? MusicLibraryCache(),
+       _platformServicesReady = platformServicesReady ?? Future.value() {
     GoogleCastService.instance.addListener(_syncGoogleCastState);
   }
 
@@ -97,6 +111,8 @@ class AppController extends ChangeNotifier {
   static const dismissUndoDuration = Duration(milliseconds: 4000);
   SharedPreferencesAsync? _preferences;
   MusicLibraryRepository? _musicLibrary;
+  final MusicLibraryCache _musicLibraryCache;
+  final Future<void> _platformServicesReady;
   AudioPlayer? _audioPlayer;
   AndroidEqualizer? _equalizer;
   AndroidLoudnessEnhancer? _loudnessEnhancer;
@@ -120,6 +136,8 @@ class AppController extends ChangeNotifier {
   static const _queueKey = 'playback_queue_ids';
   static const _currentSongKey = 'playback_current_song_id';
   static const _positionKey = 'playback_position_ms';
+  static const _lastLibrarySyncKey = 'last_local_library_sync_ms';
+  static const _startupLibrarySyncInterval = Duration(hours: 6);
   int _lastPersistedPositionSecond = -1;
 
   bool get setupComplete => _setupComplete;
@@ -305,37 +323,51 @@ class AppController extends ChangeNotifier {
     List<String> storedQueue = const [];
     String? storedCurrentSong;
     int storedPositionMs = 0;
+    int lastLibrarySyncMs = 0;
     try {
       final preferences = _preferences ??= SharedPreferencesAsync();
-      if (!ignoreStoredSetup) {
-        _setupComplete =
-            await preferences.getBool(_setupCompleteKey) ?? _setupComplete;
-      }
-      final storedTheme = await preferences.getString(_themeModeKey);
+      // These are independent platform-channel reads. Start them together so
+      // preference hydration cannot keep the first frame behind a spinner.
+      final values = await Future.wait<Object?>([
+        ignoreStoredSetup
+            ? Future<bool?>.value(_setupComplete)
+            : preferences.getBool(_setupCompleteKey),
+        preferences.getString(_themeModeKey),
+        preferences.getString(_navBarStyleKey),
+        preferences.getBool(_navBarCompactKey),
+        preferences.getDouble(_navBarRadiusKey),
+        preferences.getBool(_libraryCompactKey),
+        preferences.getStringList(_favoritesKey),
+        preferences.getStringList(_playbackHistoryKey),
+        preferences.getStringList(_searchHistoryKey),
+        preferences.getString(_playlistsKey),
+        preferences.getString(_playCountsKey),
+        preferences.getString(_engagementsKey),
+        preferences.getString(_playbackEventsKey),
+        preferences.getString(_settingsKey),
+        preferences.getStringList(_queueKey),
+        preferences.getString(_currentSongKey),
+        preferences.getInt(_positionKey),
+        preferences.getInt(_lastLibrarySyncKey),
+      ]);
+      _setupComplete = (values[0] as bool?) ?? _setupComplete;
+      final storedTheme = values[1] as String?;
       themeMode = switch (storedTheme) {
         'dark' => ThemeMode.dark,
         'light' => ThemeMode.light,
         _ => ThemeMode.system,
       };
-      navBarStyle = await preferences.getString(_navBarStyleKey) == 'full_width'
+      navBarStyle = values[2] == 'full_width'
           ? PixelNavBarStyle.fullWidth
           : PixelNavBarStyle.floating;
-      navBarCompactMode = await preferences.getBool(_navBarCompactKey) ?? false;
-      navBarCornerRadius = (await preferences.getDouble(_navBarRadiusKey) ?? 32)
-          .clamp(0, 60);
-      libraryCompactMode =
-          await preferences.getBool(_libraryCompactKey) ?? false;
-      _favoriteSongIds.addAll(
-        await preferences.getStringList(_favoritesKey) ?? const [],
-      );
-      _playbackHistoryIds.addAll(
-        await preferences.getStringList(_playbackHistoryKey) ?? const [],
-      );
-      searchHistory.addAll(
-        await preferences.getStringList(_searchHistoryKey) ?? const [],
-      );
-      storedPlaylists = await preferences.getString(_playlistsKey);
-      final storedCounts = await preferences.getString(_playCountsKey);
+      navBarCompactMode = (values[3] as bool?) ?? false;
+      navBarCornerRadius = ((values[4] as double?) ?? 32).clamp(0, 60);
+      libraryCompactMode = (values[5] as bool?) ?? false;
+      _favoriteSongIds.addAll(values[6] as List<String>? ?? const []);
+      _playbackHistoryIds.addAll(values[7] as List<String>? ?? const []);
+      searchHistory.addAll(values[8] as List<String>? ?? const []);
+      storedPlaylists = values[9] as String?;
+      final storedCounts = values[10] as String?;
       if (storedCounts != null) {
         final decoded = Map<String, dynamic>.from(
           jsonDecode(storedCounts) as Map,
@@ -344,7 +376,7 @@ class AppController extends ChangeNotifier {
           decoded.map((id, count) => MapEntry(id, count as int)),
         );
       }
-      final storedEngagements = await preferences.getString(_engagementsKey);
+      final storedEngagements = values[11] as String?;
       if (storedEngagements != null) {
         final decoded = Map<String, dynamic>.from(
           jsonDecode(storedEngagements) as Map,
@@ -357,7 +389,7 @@ class AppController extends ChangeNotifier {
               (data['lastPlayedAtMs'] as num?)?.toInt() ?? 0;
         }
       }
-      final storedEvents = await preferences.getString(_playbackEventsKey);
+      final storedEvents = values[12] as String?;
       if (storedEvents != null) {
         final decoded = jsonDecode(storedEvents) as List<dynamic>;
         _playbackEvents.addAll(
@@ -367,7 +399,7 @@ class AppController extends ChangeNotifier {
           ),
         );
       }
-      final storedSettings = await preferences.getString(_settingsKey);
+      final storedSettings = values[13] as String?;
       if (storedSettings != null) {
         _settings.addAll(
           Map<String, dynamic>.from(jsonDecode(storedSettings) as Map),
@@ -378,9 +410,10 @@ class AppController extends ChangeNotifier {
         'Library' => 2,
         _ => 0,
       };
-      storedQueue = await preferences.getStringList(_queueKey) ?? const [];
-      storedCurrentSong = await preferences.getString(_currentSongKey);
-      storedPositionMs = await preferences.getInt(_positionKey) ?? 0;
+      storedQueue = values[14] as List<String>? ?? const [];
+      storedCurrentSong = values[15] as String?;
+      storedPositionMs = (values[16] as int?) ?? 0;
+      lastLibrarySyncMs = (values[17] as int?) ?? 0;
     } catch (_) {
       // Tests and unsupported hosts can run without a preferences backend.
     }
@@ -399,27 +432,90 @@ class AppController extends ChangeNotifier {
       }
     }
 
-    // Scan media library in background so the app opens instantly without startup delay
+    // Room/SQLite cache first, then a throttled MediaStore sync in the
+    // background. This follows the Kotlin app's "show DB, sync later" startup
+    // behaviour instead of waiting for a full MediaStore query.
     unawaited(
-      refreshLibrary(notify: true).then((_) {
-        _restorePlaylists(storedPlaylists);
-        if (boolSetting('behavior_resume_playback', true) &&
-            storedCurrentSong != null) {
-          final byId = {for (final song in songs) song.id: song};
-          queue = storedQueue
-              .map((id) => byId[id])
-              .whereType<Song>()
-              .toList(growable: false);
-          currentSong = byId[storedCurrentSong];
-          position = Duration(milliseconds: storedPositionMs);
-        }
-        notifyListeners();
-      }),
+      _hydrateLibraryThenSync(
+        storedPlaylists: storedPlaylists,
+        storedQueue: storedQueue,
+        storedCurrentSong: storedCurrentSong,
+        storedPositionMs: storedPositionMs,
+        lastLibrarySyncMs: lastLibrarySyncMs,
+      ),
     );
+  }
+
+  Future<void> _hydrateLibraryThenSync({
+    required String? storedPlaylists,
+    required List<String> storedQueue,
+    required String? storedCurrentSong,
+    required int storedPositionMs,
+    required int lastLibrarySyncMs,
+  }) async {
+    var restoredFromCache = false;
+    try {
+      final cachedLocalSongs = await _musicLibraryCache.loadSongs();
+      final cachedSongs = [
+        ..._filterLocalSongs(cachedLocalSongs),
+        ..._cachedGoogleDriveSongs(),
+      ];
+      if (cachedSongs.isNotEmpty) {
+        songs = cachedSongs;
+        libraryLoading = false;
+        _restorePersistedLibraryState(
+          storedPlaylists: storedPlaylists,
+          storedQueue: storedQueue,
+          storedCurrentSong: storedCurrentSong,
+          storedPositionMs: storedPositionMs,
+        );
+        restoredFromCache = true;
+        notifyListeners();
+      }
+    } catch (_) {
+      // A cache miss (or an unsupported test host) must never block startup.
+    }
+
+    final elapsed = DateTime.now().millisecondsSinceEpoch - lastLibrarySyncMs;
+    final shouldRunStartupSync =
+        !restoredFromCache ||
+        elapsed >= _startupLibrarySyncInterval.inMilliseconds;
+    if (!shouldRunStartupSync) return;
+
+    await refreshLibrary(notify: !restoredFromCache);
+    if (!restoredFromCache) {
+      _restorePersistedLibraryState(
+        storedPlaylists: storedPlaylists,
+        storedQueue: storedQueue,
+        storedCurrentSong: storedCurrentSong,
+        storedPositionMs: storedPositionMs,
+      );
+      notifyListeners();
+    }
+  }
+
+  void _restorePersistedLibraryState({
+    required String? storedPlaylists,
+    required List<String> storedQueue,
+    required String? storedCurrentSong,
+    required int storedPositionMs,
+  }) {
+    _restorePlaylists(storedPlaylists);
+    if (boolSetting('behavior_resume_playback', true) &&
+        storedCurrentSong != null) {
+      final byId = {for (final song in songs) song.id: song};
+      queue = storedQueue
+          .map((id) => byId[id])
+          .whereType<Song>()
+          .toList(growable: false);
+      currentSong = byId[storedCurrentSong];
+      position = Duration(milliseconds: storedPositionMs);
+    }
   }
 
   Future<void> _configureAudioSession() async {
     try {
+      await _platformServicesReady;
       final session = await AudioSession.instance;
       await session.configure(AudioSessionConfiguration.music());
       _playerSubscriptions
@@ -446,39 +542,65 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> refreshLibrary({bool notify = true}) async {
-    libraryLoading = true;
+    // Keep cached content visible while a refresh runs. A first install still
+    // uses the existing loading state because there is nothing to render yet.
+    libraryLoading = songs.isEmpty;
     libraryError = null;
     if (notify) notifyListeners();
     var localSongs = const <Song>[];
+    var didScanSuccessfully = false;
     try {
-      localSongs = await (_musicLibrary ??= MediaStoreMusicLibrary()).loadSongs(
-        allowedDirectory: stringSetting('library_music_folders', ''),
-      );
-      final minimumDurationMs = doubleSetting(
-        'library_min_song_duration_ms',
-        0,
-      ).round();
-      final blockedDirectories = stringListSetting(
-        'library_blocked_directories',
-        const [],
-      );
-      localSongs = localSongs
-          .where(
-            (song) =>
-                song.duration.inMilliseconds >= minimumDurationMs &&
-                !_isInBlockedDirectory(song.path, blockedDirectories),
-          )
-          .toList(growable: false);
+      // Cache the unfiltered MediaStore set; user folder/duration rules are
+      // applied after every read so changing a setting takes effect instantly.
+      localSongs = await (_musicLibrary ??= MediaStoreMusicLibrary())
+          .loadSongs();
+      didScanSuccessfully = true;
+      try {
+        await _musicLibraryCache.sync(localSongs);
+      } catch (_) {
+        // The live MediaStore result remains usable even if SQLite is full or
+        // unavailable on the current host.
+      }
+      localSongs = _filterLocalSongs(localSongs);
     } catch (error) {
       libraryError = error;
     } finally {
       songs = [...localSongs, ..._cachedGoogleDriveSongs()];
       libraryLoading = false;
+      if (didScanSuccessfully) {
+        _persist(
+          _preferences?.setInt(
+            _lastLibrarySyncKey,
+            DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+      }
       if (notify) notifyListeners();
       if (boolSetting('auto_scan_lrc_files', true) && localSongs.isNotEmpty) {
         unawaited(LyricsService.instance.scanAndAssignLocalFiles(localSongs));
       }
     }
+  }
+
+  List<Song> _filterLocalSongs(List<Song> localSongs) {
+    final allowedDirectory = stringSetting('library_music_folders', '');
+    final minimumDurationMs = doubleSetting(
+      'library_min_song_duration_ms',
+      0,
+    ).round();
+    final blockedDirectories = stringListSetting(
+      'library_blocked_directories',
+      const [],
+    );
+    return localSongs
+        .where(
+          (song) =>
+              (allowedDirectory.isEmpty ||
+                  (song.path?.startsWith(allowedDirectory) ?? false)) &&
+              song.duration.inMilliseconds >= minimumDurationMs &&
+              !_isInBlockedDirectory(song.path, blockedDirectories),
+        )
+        .toList(growable: false);
   }
 
   Future<MetadataWriteResult> batchEditGenre(
@@ -1333,25 +1455,35 @@ class AppController extends ChangeNotifier {
   }
 
   /// Probes real audio metadata (bitrate, sampleRate, mimeType) for [song] via
-  /// the native [AudioMetaService] (MediaMetadataRetriever), then patches
-  /// [currentSong] if the song is still the active one.
+  /// the native [AudioMetaService], then fills missing fields on [currentSong].
   ///
   /// Matches Kotlin's MediaControllerSyncStateHolder.probeAudioMetadata().
   Future<void> _probeAudioMeta(Song song) async {
     if (song.source == SongSource.googleDrive) return;
-    final uri = song.contentUri ?? song.path;
+    // Kotlin probes `Song.filePath`, not the content URI. On some Android ROMs
+    // the URI probe reports every track as generic audio/mp4, while the file
+    // path exposes the real FLAC/Opus/MP3 container.
+    final uri = song.path ?? song.contentUri;
     if (uri == null || uri.isEmpty) return;
     final meta = await AudioMetaService.fetch(uri);
     if (meta == null) return;
+    final resolvedMimeType = AudioMetaService.resolveMimeType(
+      filePath: song.path,
+      contentUri: song.contentUri,
+      reportedMimeType: meta.mimeType,
+    );
     // Only update if this song is still playing
     if (currentSong?.id != song.id) return;
+    // A concrete file-path probe has precedence over MediaStore's raw MIME,
+    // just as Kotlin deep scans use audioMetadata.mimeType before raw.mimeType.
+    // Generic MP4 values still resolve through the filename instead.
     final needsUpdate =
-        (meta.mimeType != null && meta.mimeType != song.mimeType) ||
-        (meta.bitrate != null && meta.bitrate != song.bitrate) ||
-        (meta.sampleRate != null && meta.sampleRate != song.sampleRate);
+        (resolvedMimeType != null && resolvedMimeType != song.mimeType) ||
+        (song.bitrate == null && meta.bitrate != null) ||
+        (song.sampleRate == null && meta.sampleRate != null);
     if (!needsUpdate) return;
     currentSong = song.copyWith(
-      mimeType: meta.mimeType,
+      mimeType: resolvedMimeType,
       bitrate: meta.bitrate,
       sampleRate: meta.sampleRate,
     );
@@ -1794,6 +1926,9 @@ class AppController extends ChangeNotifier {
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
   }) async {
+    // `runApp` is intentionally not held behind platform initialization. Wait
+    // here instead, immediately before the first native audio player is made.
+    await _platformServicesReady;
     final playable = requestedQueue
         .where((item) => item.playbackUri != null)
         .toList(growable: false);
@@ -1817,45 +1952,49 @@ class AppController extends ChangeNotifier {
           ? await GoogleDriveAuthService.instance.refreshAccessToken()
           : null;
 
-      debugPrint('PixelPlayer: Loading ${playable.length} tracks, '
-          'starting at index $index, uri=$uri');
+      debugPrint(
+        'PixelPlayer: Loading ${playable.length} tracks, '
+        'starting at index $index, uri=$uri',
+      );
 
-      final audioSources = playable.map((item) {
-        // Only pass headers for sources that need them (e.g. Google Drive).
-        // Passing empty headers to content:// URIs can cause issues.
-        final Map<String, String>? headers;
-        if (item.source == SongSource.googleDrive &&
-            freshGoogleDriveToken != null) {
-          headers = {'Authorization': 'Bearer $freshGoogleDriveToken'};
-        } else if (item.playbackHeaders.isNotEmpty) {
-          headers = item.playbackHeaders;
-        } else {
-          headers = null;
-        }
+      final audioSources = playable
+          .map((item) {
+            // Only pass headers for sources that need them (e.g. Google Drive).
+            // Passing empty headers to content:// URIs can cause issues.
+            final Map<String, String>? headers;
+            if (item.source == SongSource.googleDrive &&
+                freshGoogleDriveToken != null) {
+              headers = {'Authorization': 'Bearer $freshGoogleDriveToken'};
+            } else if (item.playbackHeaders.isNotEmpty) {
+              headers = item.playbackHeaders;
+            } else {
+              headers = null;
+            }
 
-        return AudioSource.uri(
-          item.playbackUri!,
-          headers: headers,
-          tag: MediaItem(
-            id: item.id,
-            title: item.title,
-            artist: item.artist,
-            album: item.album,
-            duration: item.duration,
-            artUri: item.albumId != null
-                ? Uri.parse(
-                    'content://media/external/audio/albumart/'
-                    '${item.albumId}',
-                  )
-                : (item.mediaStoreId != null
+            return AudioSource.uri(
+              item.playbackUri!,
+              headers: headers,
+              tag: MediaItem(
+                id: item.id,
+                title: item.title,
+                artist: item.artist,
+                album: item.album,
+                duration: item.duration,
+                artUri: item.albumId != null
                     ? Uri.parse(
-                        'content://media/external/audio/media/'
-                        '${item.mediaStoreId}/albumart',
+                        'content://media/external/audio/albumart/'
+                        '${item.albumId}',
                       )
-                    : null),
-          ),
-        );
-      }).toList(growable: false);
+                    : (item.mediaStoreId != null
+                          ? Uri.parse(
+                              'content://media/external/audio/media/'
+                              '${item.mediaStoreId}/albumart',
+                            )
+                          : null),
+              ),
+            );
+          })
+          .toList(growable: false);
 
       await player.setAudioSources(
         audioSources,
@@ -1898,7 +2037,9 @@ class AppController extends ChangeNotifier {
       final enabled = boolSetting('equalizer_enabled', false);
       await equalizer.setEnabled(enabled);
       await loudness.setEnabled(enabled);
-      await loudness.setTargetGain(doubleSetting('equalizer_loudness', .35) * 12);
+      await loudness.setTargetGain(
+        doubleSetting('equalizer_loudness', .35) * 12,
+      );
       if (!enabled) return;
       final parameters = await equalizer.parameters;
       final desired = equalizerBands;

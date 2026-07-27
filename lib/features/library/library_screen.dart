@@ -140,7 +140,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final favoriteSongs = _sortedSongs(
       controller.favoriteSongs.where(_matchesStorageFilter).toList(),
     );
+    final colors = Theme.of(context).colorScheme;
     final compact = controller.libraryCompactMode;
+    final bottomGradientHeight =
+        resolveNavBarContentHeight(controller.navBarCompactMode) +
+        miniPlayerHeight +
+        miniPlayerBottomSpacer +
+        8;
     final locateVisible = _currentSongOutsideViewport(controller, songs);
     final selectionCount =
         _section == LibrarySection.songs || _section == LibrarySection.favorites
@@ -162,124 +168,158 @@ class _LibraryScreenState extends State<LibraryScreen> {
           setState(_clearSelection);
         }
       },
-      child: Column(
+      child: Stack(
         children: [
-          SafeArea(
-            bottom: false,
-            child: _LibraryHeader(
-              section: _section,
-              compact: compact,
-              onOpenSettings: widget.onOpenSettings,
-              onOpenSections: () => _showSectionPicker(context),
-              onSelectSection: (section) {
-                _pages.animateToPage(
-                  LibrarySection.values.indexOf(section),
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                );
-              },
-            ),
-          ),
-          Expanded(
-            child: ColoredBox(
-              color: Theme.of(
-                context,
-              ).colorScheme.primaryContainer.withValues(alpha: .4),
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(34),
+          Column(
+            children: [
+              SafeArea(
+                bottom: false,
+                child: _LibraryHeader(
+                  section: _section,
+                  compact: compact,
+                  onOpenSettings: widget.onOpenSettings,
+                  onOpenSections: () => _showSectionPicker(context),
+                  onSelectSection: (section) {
+                    _pages.animateToPage(
+                      LibrarySection.values.indexOf(section),
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                    );
+                  },
                 ),
+              ),
+              Expanded(
                 child: ColoredBox(
-                  color: Theme.of(context).colorScheme.surface,
-                  child: Column(
-                    children: [
-                      if (selectionCount > 0)
-                        _LibrarySelectionRow(
-                          selectedCount: selectionCount,
-                          onSelectAll: () => setState(
-                            () => _selectAllCurrentSection(
-                              songs: songs,
-                              favoriteSongs: favoriteSongs,
-                              albums: albums,
-                              artists: artists,
-                              playlists: playlists,
+                  color: colors.primaryContainer.withValues(alpha: .4),
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(34),
+                    ),
+                    child: ColoredBox(
+                      color: colors.surface,
+                      child: Column(
+                        children: [
+                          if (selectionCount > 0)
+                            _LibrarySelectionRow(
+                              selectedCount: selectionCount,
+                              onSelectAll: () => setState(
+                                () => _selectAllCurrentSection(
+                                  songs: songs,
+                                  favoriteSongs: favoriteSongs,
+                                  albums: albums,
+                                  artists: artists,
+                                  playlists: playlists,
+                                ),
+                              ),
+                              onOptions: () =>
+                                  _section == LibrarySection.playlists
+                                  ? _showSelectedPlaylistOptions(
+                                      selectedPlaylists,
+                                    )
+                                  : _showSelectedSongOptions(
+                                      selectedActionSongs,
+                                    ),
+                              onClear: () => setState(_clearSelection),
+                            )
+                          else
+                            _LibraryActionRow(
+                              isPlaylist: _section == LibrarySection.playlists,
+                              showLocate: locateVisible,
+                              showStorageFilter: switch (_section) {
+                                LibrarySection.songs ||
+                                LibrarySection.albums ||
+                                LibrarySection.artists ||
+                                LibrarySection.favorites => true,
+                                _ => false,
+                              },
+                              storageFilter: _storageFilter,
+                              onMainAction: () => _runMainAction(
+                                controller,
+                                songs,
+                                favoriteSongs,
+                              ),
+                              onLocate: () =>
+                                  _locateCurrentSong(controller, songs),
+                              onStorageFilter: () {
+                                setState(() {
+                                  _storageFilter = (_storageFilter + 1) % 3;
+                                });
+                              },
+                              onSort: () => _showSortSheet(context),
+                            ),
+                          Expanded(
+                            child: PageView(
+                              controller: _pages,
+                              onPageChanged: (index) {
+                                setState(() {
+                                  _section = LibrarySection.values[index];
+                                  _clearSelection();
+                                });
+                              },
+                              children: [
+                                _SongsTab(
+                                  songs: songs,
+                                  controller: _songsScroll,
+                                  selectedSongs: _selectedSongs,
+                                  onToggleSelection: _toggleSongSelection,
+                                ),
+                                _AlbumsTab(
+                                  albums: albums,
+                                  grid: _grid,
+                                  selectedIds: _selectedMediaIds,
+                                  onOpen: widget.onOpenAlbum,
+                                  onToggleSelection: _toggleMediaSelection,
+                                ),
+                                _ArtistsTab(
+                                  artists: artists,
+                                  onOpen: widget.onOpenArtist,
+                                ),
+                                _PlaylistsTab(
+                                  playlists: playlists,
+                                  selectedIds: _selectedMediaIds,
+                                  onOpen: widget.onOpenPlaylist,
+                                  onToggleSelection: _toggleMediaSelection,
+                                  onCreate: widget.onCreatePlaylist,
+                                ),
+                                _FoldersTab(songs: songs),
+                                _SongsTab(
+                                  songs: favoriteSongs,
+                                  controller: _favoritesScroll,
+                                  selectedSongs: _selectedSongs,
+                                  onToggleSelection: _toggleSongSelection,
+                                  emptyIcon: Icons.favorite_rounded,
+                                  emptyTitle: 'No liked songs yet',
+                                  emptySubtitle:
+                                      'Tap the heart icon while playing a song to save it here.',
+                                ),
+                              ],
                             ),
                           ),
-                          onOptions: () => _section == LibrarySection.playlists
-                              ? _showSelectedPlaylistOptions(selectedPlaylists)
-                              : _showSelectedSongOptions(selectedActionSongs),
-                          onClear: () => setState(_clearSelection),
-                        )
-                      else
-                        _LibraryActionRow(
-                          isPlaylist: _section == LibrarySection.playlists,
-                          showLocate: locateVisible,
-                          showStorageFilter: switch (_section) {
-                            LibrarySection.songs ||
-                            LibrarySection.albums ||
-                            LibrarySection.artists ||
-                            LibrarySection.favorites => true,
-                            _ => false,
-                          },
-                          storageFilter: _storageFilter,
-                          onMainAction: () =>
-                              _runMainAction(controller, songs, favoriteSongs),
-                          onLocate: () => _locateCurrentSong(controller, songs),
-                          onStorageFilter: () {
-                            setState(() {
-                              _storageFilter = (_storageFilter + 1) % 3;
-                            });
-                          },
-                          onSort: () => _showSortSheet(context),
-                        ),
-                      Expanded(
-                        child: PageView(
-                          controller: _pages,
-                          onPageChanged: (index) {
-                            setState(() {
-                              _section = LibrarySection.values[index];
-                              _clearSelection();
-                            });
-                          },
-                          children: [
-                            _SongsTab(
-                              songs: songs,
-                              controller: _songsScroll,
-                              selectedSongs: _selectedSongs,
-                              onToggleSelection: _toggleSongSelection,
-                            ),
-                            _AlbumsTab(
-                              albums: albums,
-                              grid: _grid,
-                              selectedIds: _selectedMediaIds,
-                              onOpen: widget.onOpenAlbum,
-                              onToggleSelection: _toggleMediaSelection,
-                            ),
-                            _ArtistsTab(
-                              artists: artists,
-                              onOpen: widget.onOpenArtist,
-                            ),
-                            _PlaylistsTab(
-                              playlists: playlists,
-                              selectedIds: _selectedMediaIds,
-                              onOpen: widget.onOpenPlaylist,
-                              onToggleSelection: _toggleMediaSelection,
-                              onCreate: widget.onCreatePlaylist,
-                            ),
-                            _FoldersTab(songs: songs),
-                            _SongsTab(
-                              songs: favoriteSongs,
-                              controller: _favoritesScroll,
-                              selectedSongs: _selectedSongs,
-                              onToggleSelection: _toggleSongSelection,
-                              emptyIcon: Icons.favorite_rounded,
-                              emptyTitle: 'No liked songs yet',
-                              emptySubtitle:
-                                  'Tap the heart icon while playing a song to save it here.',
-                            ),
-                          ],
-                        ),
+                        ],
                       ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: bottomGradientHeight,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: const [0, .2, .8, 1],
+                    colors: [
+                      Colors.transparent,
+                      Colors.transparent,
+                      colors.surfaceContainerLowest,
+                      colors.surfaceContainerLowest,
                     ],
                   ),
                 ),
@@ -1848,129 +1888,14 @@ class _LibrarySongItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = AppScope.of(context);
-    final colors = Theme.of(context).colorScheme;
-    final current = controller.currentSong?.id == song.id;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        color: selected
-            ? colors.secondaryContainer
-            : current
-            ? colors.primaryContainer
-            : colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(selected || current ? 50 : 22),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: selectionMode
-            ? onToggleSelection
-            : () => controller.playSong(song, fromQueue: queue),
-        onLongPress: onToggleSelection,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-          child: Row(
-            children: [
-              if (selected)
-                Container(
-                  width: 50,
-                  height: 50,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: colors.primary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Text(
-                    '$selectionIndex',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: colors.onPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                )
-              else
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  width: 50,
-                  height: 50,
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(current ? 25 : 10),
-                  ),
-                  child: Artwork(
-                    colors: song.colors,
-                    mediaStoreId: song.mediaStoreId,
-                    borderRadius: current ? 25 : 10,
-                    size: 50,
-                  ),
-                ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: current
-                            ? colors.onPrimaryContainer
-                            : colors.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      song.artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color:
-                            (current
-                                    ? colors.onPrimaryContainer
-                                    : colors.onSurface)
-                                .withValues(alpha: .7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (current) ...[
-                const SizedBox(width: 8),
-                Icon(
-                  controller.isPlaying
-                      ? Icons.graphic_eq_rounded
-                      : Icons.pause_rounded,
-                  size: 18,
-                  color: colors.onPrimaryContainer,
-                ),
-              ],
-              const SizedBox(width: 12),
-              if (!selectionMode)
-                SizedBox.square(
-                  dimension: 36,
-                  child: IconButton.filled(
-                    padding: EdgeInsets.zero,
-                    style: IconButton.styleFrom(
-                      backgroundColor: current
-                          ? colors.onPrimaryContainer
-                          : colors.surfaceContainerHigh,
-                      foregroundColor: current
-                          ? colors.primaryContainer
-                          : colors.onSurface,
-                    ),
-                    onPressed: () => _showSongMenu(context),
-                    icon: const Icon(Icons.more_vert_rounded, size: 24),
-                    tooltip: 'More options for ${song.title}',
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+    return SongTile(
+      song: song,
+      queue: queue,
+      selected: selected,
+      selectionIndex: selectionIndex,
+      onTap: selectionMode ? onToggleSelection : null,
+      onLongPress: onToggleSelection,
+      onMore: () => _showSongMenu(context),
     );
   }
 

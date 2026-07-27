@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/song.dart';
 import '../../core/state/app_controller.dart';
+import '../playback/edit_transition_screen.dart';
 import '../player/full_player.dart';
 import '../player/mini_player.dart';
 import '../../shared/widgets/artwork.dart';
@@ -451,14 +452,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               ListTile(
                 leading: const Icon(Icons.graphic_eq_rounded),
                 title: const Text('Set default transition'),
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(sheetContext);
                   AppScope.of(
                     context,
                   ).setStringSetting('transition_playlist_id', playlist.id);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Default transition set for playlist'),
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const EditTransitionScreen(),
                     ),
                   );
                 },

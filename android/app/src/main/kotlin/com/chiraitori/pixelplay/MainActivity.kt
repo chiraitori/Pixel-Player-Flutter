@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.AudioDeviceInfo
 import android.media.MediaCodecList
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
@@ -67,55 +69,86 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /**
-     * Reads bitrate, sample rate, and MIME type from [MediaMetadataRetriever],
-     * identical to the Kotlin PixelPlayer app's probeAudioMetadata() logic.
+     * Reads bitrate, sample rate, and MIME type using the same two-stage
+     * MediaMetadataRetriever -> MediaExtractor flow as Kotlin AudioMetaUtils.
      * Must be called from a background thread.
      */
     private fun readAudioMeta(uriString: String): Map<String, Any?>? {
         val retriever = MediaMetadataRetriever()
-        return try {
-            val uri = Uri.parse(uriString)
+        val uri = Uri.parse(uriString)
+        val localPath = if (uriString.startsWith("file://")) {
+            Uri.decode(uriString.removePrefix("file://"))
+        } else {
+            uriString
+        }
+        var mimeType: String? = null
+        var bitrate: Int? = null
+        var sampleRate: Int? = null
+
+        try {
             if (uri.scheme == "content" || uri.scheme == "http" || uri.scheme == "https") {
                 retriever.setDataSource(this, uri)
             } else {
-                // file:// or bare path
-                val path = if (uriString.startsWith("file://"))
-                    Uri.decode(uriString.removePrefix("file://"))
-                else uriString
-                retriever.setDataSource(path)
+                retriever.setDataSource(localPath)
             }
 
-            val mimeType = retriever
+            mimeType = retriever
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
                 ?.takeIf { it.isNotBlank() }
                 ?: run {
-                    // Fallback: ask ContentResolver for the MIME type
-                    val parsed = Uri.parse(uriString)
-                    if (parsed.scheme == "content") contentResolver.getType(parsed) else null
+                    if (uri.scheme == "content") contentResolver.getType(uri) else null
                 }
 
-            val bitrate = retriever
+            bitrate = retriever
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
                 ?.toIntOrNull()
                 ?.takeIf { it > 0 }
 
-            // METADATA_KEY_SAMPLERATE is only available on Android 12+ (API 31)
-            val sampleRate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            sampleRate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
                     ?.toIntOrNull()
                     ?.takeIf { it > 0 }
             } else null
-
-            mapOf(
-                "mimeType" to mimeType,
-                "bitrate" to bitrate,
-                "sampleRate" to sampleRate,
-            )
         } catch (_: Exception) {
-            null
         } finally {
             retriever.release()
         }
+
+        // Some formats have incomplete metadata in MediaMetadataRetriever.
+        // Match the original app and fill only missing values from the audio
+        // track exposed by MediaExtractor.
+        try {
+            val extractor = MediaExtractor()
+            try {
+                if (uri.scheme == "content" || uri.scheme == "http" || uri.scheme == "https") {
+                    extractor.setDataSource(this, uri, null)
+                } else {
+                    extractor.setDataSource(localPath)
+                }
+                for (index in 0 until extractor.trackCount) {
+                    val format = extractor.getTrackFormat(index)
+                    val trackMime = format.getString(MediaFormat.KEY_MIME)
+                    if (trackMime?.startsWith("audio/") != true) continue
+                    mimeType = mimeType ?: trackMime
+                    if (sampleRate == null && format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                    }
+                    if (bitrate == null && format.containsKey(MediaFormat.KEY_BIT_RATE)) {
+                        bitrate = format.getInteger(MediaFormat.KEY_BIT_RATE)
+                    }
+                    break
+                }
+            } finally {
+                extractor.release()
+            }
+        } catch (_: Exception) {
+        }
+
+        return mapOf(
+            "mimeType" to mimeType,
+            "bitrate" to bitrate,
+            "sampleRate" to sampleRate,
+        )
     }
 
     private fun readCapabilities(): Map<String, Any?> {

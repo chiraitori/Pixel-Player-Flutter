@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/song.dart';
+import '../../core/services/audio_meta_service.dart';
 import '../../core/state/app_controller.dart';
 import '../../features/details/album_detail_screen.dart';
 import '../../features/details/artist_detail_screen.dart';
@@ -348,7 +349,15 @@ class SongTile extends StatelessWidget {
               _InfoLine('Sample rate', '${song.sampleRate} Hz'),
             if (song.bitrate != null)
               _InfoLine('Bitrate', '${(song.bitrate! / 1000).round()} kbps'),
-            if (song.mimeType != null) _InfoLine('Format', song.mimeType!),
+            _InfoLine(
+              'Format',
+              AudioMetaService.formatFor(
+                filePath: song.path,
+                contentUri: song.contentUri,
+                mimeType: song.mimeType,
+              ),
+            ),
+            if (song.mimeType != null) _InfoLine('MIME type', song.mimeType!),
             if (song.path != null) _InfoLine('Path', song.path!),
           ],
         ),

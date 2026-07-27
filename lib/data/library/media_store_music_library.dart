@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 
 import '../../core/models/song.dart';
+import '../../core/services/audio_meta_service.dart';
 import 'music_library_repository.dart';
 
 class MediaStoreMusicLibrary implements MusicLibraryRepository {
@@ -41,7 +42,11 @@ class MediaStoreMusicLibrary implements MusicLibraryRepository {
     final trackValue = source.track ?? 0;
     final track = trackValue > 1000 ? trackValue % 1000 : trackValue;
     final disc = trackValue > 1000 ? trackValue ~/ 1000 : 1;
-    final extension = source.fileExtension.trim();
+    // `file_extension` comes from the MediaStore plugin and is occasionally
+    // generic/wrong on vendor ROMs. The actual MediaStore path is authoritative.
+    final extension =
+        AudioMetaService.fileExtensionFromPath(source.data) ??
+        source.fileExtension.trim().toLowerCase();
     final durationMs = source.duration ?? 0;
     final bitrate = durationMs > 0 && source.size > 0
         ? (source.size * 8000 / durationMs).round()
@@ -65,36 +70,11 @@ class MediaStoreMusicLibrary implements MusicLibraryRepository {
       mediaStoreId: source.id,
       dateAdded: _dateFromSeconds(source.dateAdded),
       dateModified: _dateFromSeconds(source.dateModified),
-      mimeType: _extensionToMime(extension),
+      mimeType: AudioMetaService.mimeTypeForExtension(extension),
       fileSize: source.size,
       bitrate: bitrate,
     );
   }
-
-  /// Map a file extension to the canonical MIME type used by MediaStore.
-  /// This mirrors Android's own mapping so that [AudioMetaService.mimeTypeToFormat]
-  /// will produce the same labels as the Kotlin app.
-  static String? _extensionToMime(String ext) {
-    if (ext.isEmpty) return null;
-    return switch (ext.toLowerCase()) {
-      'mp3' => 'audio/mpeg',
-      'm4a' || 'mp4' || 'm4b' || 'm4p' => 'audio/mp4',
-      'aac' => 'audio/aac',
-      'ogg' || 'oga' => 'audio/ogg',
-      'opus' => 'audio/opus',
-      'flac' => 'audio/flac',
-      'wav' || 'wave' => 'audio/wav',
-      'alac' => 'audio/alac',
-      'aiff' || 'aif' || 'aifc' => 'audio/aiff',
-      'wma' => 'audio/x-ms-wma',
-      'amr' => 'audio/amr',
-      'mid' || 'midi' => 'audio/midi',
-      'ac3' => 'audio/ac3',
-      'dts' => 'audio/vnd.dts',
-      _ => 'audio/$ext',
-    };
-  }
-
 
   String _clean(String? value, String fallback) {
     final clean = value?.trim();

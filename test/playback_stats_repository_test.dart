@@ -42,6 +42,10 @@ void main() {
     );
     expect(result.peakWindow, '8 PM – 12 AM');
     expect(result.songPlayCounts[MockLibrary.songs[0].id], 2);
+    expect(
+      result.songListeningDurations[MockLibrary.songs[0].id],
+      const Duration(minutes: 25),
+    );
     expect(result.genreShares.first.$1, MockLibrary.songs[0].genre);
   });
 

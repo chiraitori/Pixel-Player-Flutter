@@ -17,6 +17,7 @@ import '../details/artist_detail_screen.dart';
 import 'album_carousel.dart';
 import 'animated_playback_controls.dart';
 import 'bottom_toggle_row.dart';
+import 'cast_bottom_sheet.dart';
 import 'full_player_top_bar.dart';
 import 'lyrics_screen.dart';
 import 'player_artist_picker_sheet.dart';
@@ -514,125 +515,7 @@ class _FullPlayerState extends State<FullPlayer> {
   }
 
   Future<void> _showOutput(BuildContext context, Song song) async {
-    final cast = GoogleCastService.instance;
-    await _loadAudioRoute();
-    await cast.startDiscovery();
-    if (!context.mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(18, 2, 18, 30),
-        child: StreamBuilder<List<GoogleCastDevice>>(
-          stream: cast.initialized ? cast.devicesStream : null,
-          initialData: const [],
-          builder: (context, snapshot) {
-            final devices = snapshot.data ?? const [];
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const ListTile(
-                  title: Text(
-                    'Audio output',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.phone_android_rounded),
-                  title: const Text('This device'),
-                  subtitle: const Text('Built-in speaker'),
-                  trailing: Icon(
-                    !cast.connected && !_isBluetoothActive
-                        ? Icons.check_circle_rounded
-                        : Icons.radio_button_unchecked_rounded,
-                  ),
-                  onTap: cast.connected
-                      ? () async {
-                          final controller = AppScope.of(context);
-                          final remotePosition = cast.remotePosition;
-                          final wasPlaying = cast.remoteIsPlaying;
-                          await cast.disconnect();
-                          controller.resumePlaybackOnThisDevice(
-                            remotePosition: remotePosition,
-                            wasPlaying: wasPlaying,
-                          );
-                          if (sheetContext.mounted) {
-                            Navigator.pop(sheetContext);
-                          }
-                        }
-                      : null,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.bluetooth_audio_rounded),
-                  title: Text(_bluetoothName ?? 'Bluetooth device'),
-                  subtitle: Text(
-                    _isBluetoothActive
-                        ? 'Connected audio output'
-                        : 'Choose a paired audio device',
-                  ),
-                  trailing: Icon(
-                    _isBluetoothActive && !cast.connected
-                        ? Icons.check_circle_rounded
-                        : Icons.open_in_new_rounded,
-                  ),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    const MethodChannel(
-                      'com.chiraitori.pixelplay/device_capabilities',
-                    ).invokeMethod<void>('openAudioOutputSettings');
-                  },
-                ),
-                if (cast.lastError != null)
-                  ListTile(
-                    leading: const Icon(Icons.error_outline_rounded),
-                    title: Text(cast.lastError!),
-                  )
-                else if (devices.isEmpty)
-                  const ListTile(
-                    leading: Icon(Icons.cast_rounded),
-                    title: Text('Looking for Cast devices…'),
-                    subtitle: Text('Use the same Wi-Fi network'),
-                    trailing: SizedBox.square(
-                      dimension: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                else
-                  for (final device in devices)
-                    ListTile(
-                      leading: const Icon(Icons.cast_rounded),
-                      title: Text(device.friendlyName),
-                      subtitle: Text(device.modelName ?? 'Google Cast'),
-                      trailing: cast.routeName == device.friendlyName
-                          ? const Icon(Icons.check_circle_rounded)
-                          : const Icon(Icons.chevron_right_rounded),
-                      onTap: () async {
-                        Navigator.pop(sheetContext);
-                        final controller = AppScope.of(context);
-                        if (controller.isPlaying) {
-                          controller.togglePlayPause();
-                        }
-                        try {
-                          await cast.castSong(
-                            device,
-                            song,
-                            position: controller.position,
-                          );
-                        } catch (error) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(cast.lastError ?? '$error')),
-                          );
-                        }
-                      },
-                    ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-    await cast.stopDiscovery();
+    await showCastBottomSheet(context: context, song: song);
   }
 }
 
@@ -1062,14 +945,12 @@ class _PlayerProgressState extends State<_PlayerProgress> {
   String? _audioMetaLabel(Song song) {
     final sampleRate = song.sampleRate;
     final bitrate = song.bitrate;
-    final mimeType = song.mimeType;
-
-    final formatLabel = mimeType != null && mimeType.isNotEmpty
-        ? AudioMetaService.mimeTypeToFormat(mimeType)
-        : null;
-    final validFormat = (formatLabel != null && formatLabel != '-')
-        ? formatLabel.toUpperCase()
-        : null;
+    final formatLabel = AudioMetaService.formatFor(
+      filePath: song.path,
+      contentUri: song.contentUri,
+      mimeType: song.mimeType,
+    );
+    final validFormat = formatLabel == '-' ? null : formatLabel;
 
     final parts = <String>[];
 

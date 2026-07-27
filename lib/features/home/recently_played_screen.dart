@@ -66,26 +66,10 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
               ),
               child: CustomScrollView(
                 slivers: [
-                  SliverAppBar(
-                    pinned: true,
-                    backgroundColor: Colors.transparent,
-                    surfaceTintColor: Colors.transparent,
-                    expandedHeight: 190,
-                    flexibleSpace: FlexibleSpaceBar(
-                      titlePadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                      title: Text(
-                        'Recently Played',
-                        style: const TextStyle(
-                          fontFamily: 'GoogleSansFlex',
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -.4,
-                        ),
-                      ),
-                    ),
-                  ),
+                  const SliverToBoxAdapter(child: _ExpressiveHistoryHeader()),
                   SliverToBoxAdapter(
                     child: SizedBox(
-                      height: 52,
+                      height: 44,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -129,7 +113,7 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                       SliverList.builder(
                         itemCount: group.songs.length,
                         itemBuilder: (context, index) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: SongTile(
                             song: group.songs[index],
                             queue: songs,
@@ -148,6 +132,20 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            Positioned(
+              left: 10,
+              top: MediaQuery.paddingOf(context).top + 8,
+              child: IconButton.filled(
+                key: const ValueKey('recently-played-back'),
+                onPressed: () => Navigator.maybePop(context),
+                style: IconButton.styleFrom(
+                  backgroundColor: colors.surface,
+                  foregroundColor: colors.onSurface,
+                ),
+                icon: const Icon(Icons.arrow_back_rounded),
+                tooltip: 'Back',
               ),
             ),
             if (miniVisible && !controller.fullPlayerVisible)
@@ -261,6 +259,43 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
   }
 }
 
+class _ExpressiveHistoryHeader extends StatelessWidget {
+  const _ExpressiveHistoryHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('recently-played-header'),
+      height: 190,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      alignment: Alignment.bottomLeft,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            colors.secondary.withValues(alpha: .24),
+            colors.primary.withValues(alpha: .10),
+            colors.surface.withValues(alpha: .95),
+            colors.surface,
+          ],
+        ),
+      ),
+      child: Text(
+        'Recently Played',
+        style: const TextStyle(
+          fontFamily: 'GoogleSansFlex',
+          fontSize: 34,
+          height: 38 / 34,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -.4,
+        ),
+      ),
+    );
+  }
+}
+
 class _HistoryActions extends StatelessWidget {
   const _HistoryActions({required this.songs});
 
@@ -269,10 +304,10 @@ class _HistoryActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    return SizedBox(
-      height: 68,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 52,
         child: Row(
           children: [
             Expanded(
@@ -331,13 +366,30 @@ class _TimestampDivider extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final color = hourBucket ? colors.primary : colors.secondary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
       child: Row(
         children: [
-          Expanded(child: Divider(color: color.withValues(alpha: .5))),
+          Expanded(
+            child: Container(
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(99),
+                gradient: LinearGradient(
+                  colors: [
+                    color.withValues(alpha: 0),
+                    color.withValues(alpha: .5),
+                  ],
+                ),
+              ),
+            ),
+          ),
           const SizedBox(width: 10),
           Chip(
-            avatar: CircleAvatar(backgroundColor: color, radius: 3),
+            avatar: Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            ),
             label: Text(label),
             backgroundColor: hourBucket
                 ? colors.primaryContainer.withValues(alpha: .78)
@@ -345,7 +397,20 @@ class _TimestampDivider extends StatelessWidget {
             side: BorderSide.none,
           ),
           const SizedBox(width: 10),
-          Expanded(child: Divider(color: color.withValues(alpha: .5))),
+          Expanded(
+            child: Container(
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(99),
+                gradient: LinearGradient(
+                  colors: [
+                    color.withValues(alpha: .5),
+                    color.withValues(alpha: 0),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
