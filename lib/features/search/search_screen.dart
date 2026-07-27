@@ -10,6 +10,7 @@ import '../../shared/widgets/song_tile.dart';
 import '../player/mini_player.dart';
 import '../shell/player_internal_navigation_bar.dart';
 import 'widgets/genre_categories_grid.dart';
+import 'widgets/search_result_media_card.dart';
 
 enum _SearchFilter { all, songs, albums, artists, playlists }
 
@@ -452,40 +453,62 @@ class _SearchScreenState extends State<SearchScreen> {
               (selected) => selected.id == song.id,
             );
             final selected = selectionIndex >= 0;
-            return SongTile(
-              song: song,
-              queue: songs,
-              selected: selected,
-              selectionIndex: selected ? selectionIndex + 1 : null,
-              onLongPress: () => _toggleSongSelection(song),
-              onTap: _selectedSongs.isEmpty
-                  ? null
-                  : () => _toggleSongSelection(song),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: SongTile(
+                song: song,
+                queue: songs,
+                selected: selected,
+                selectionIndex: selected ? selectionIndex + 1 : null,
+                onLongPress: () => _toggleSongSelection(song),
+                onTap: _selectedSongs.isEmpty
+                    ? null
+                    : () => _toggleSongSelection(song),
+              ),
             );
           },
         ),
       ],
       if (_shows(_SearchFilter.albums) && albums.isNotEmpty) ...[
         const SliverToBoxAdapter(child: _ResultHeader('Albums')),
-        SliverToBoxAdapter(
-          child: _HorizontalResults(
-            items: [
-              for (final album in albums)
-                _ResultCard(
-                  title: album.title,
-                  subtitle: album.artist,
+        SliverList.builder(
+          itemCount: albums.length,
+          itemBuilder: (context, index) {
+            final album = albums[index];
+            final selectionIndex = _selectedAlbums.indexWhere(
+              (selected) => selected.id == album.id,
+            );
+            final selected = selectionIndex >= 0;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: SearchResultMediaCard(
+                title: album.title,
+                subtitle: album.artist,
+                leading: Artwork(
                   colors: album.colors,
+                  size: 56,
+                  borderRadius: 22,
                   mediaStoreId: album.songs.first.mediaStoreId,
-                  selected: _selectedAlbums.any(
-                    (selected) => selected.id == album.id,
-                  ),
-                  onTap: () => _selectedAlbums.isNotEmpty
-                      ? _toggleAlbumSelection(album)
-                      : widget.onOpenAlbum(album.id),
-                  onLongPress: () => _toggleAlbumSelection(album),
                 ),
-            ],
-          ),
+                selected: selected,
+                selectionIndex: selected ? selectionIndex + 1 : null,
+                selectionMode: _selectedAlbums.isNotEmpty,
+                onOpen: () => _selectedAlbums.isNotEmpty
+                    ? _toggleAlbumSelection(album)
+                    : widget.onOpenAlbum(album.id),
+                onLongPress: () => _toggleAlbumSelection(album),
+                onSelectionToggle: () => _toggleAlbumSelection(album),
+                onPlay: () => controller.playSong(
+                  album.songs.first,
+                  fromQueue: album.songs,
+                ),
+                playButtonColor: Theme.of(context).colorScheme.secondary,
+                playButtonContentColor: Theme.of(
+                  context,
+                ).colorScheme.onSecondary,
+              ),
+            );
+          },
         ),
       ],
       if (_shows(_SearchFilter.artists) && artists.isNotEmpty) ...[
@@ -494,20 +517,29 @@ class _SearchScreenState extends State<SearchScreen> {
           itemCount: artists.length,
           itemBuilder: (context, index) {
             final artist = artists[index];
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-              leading: ClipOval(
-                child: Artwork(
-                  colors: artist.colors,
-                  size: 58,
-                  borderRadius: 0,
-                  mediaStoreId: artist.songs.first.mediaStoreId,
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: SearchResultMediaCard(
+                title: artist.name,
+                subtitle: '${artist.songs.length} songs',
+                leading: ClipOval(
+                  child: Artwork(
+                    colors: artist.colors,
+                    size: 56,
+                    borderRadius: 0,
+                    mediaStoreId: artist.songs.first.mediaStoreId,
+                  ),
                 ),
+                onOpen: () => widget.onOpenArtist(artist.id),
+                onPlay: () => controller.playSong(
+                  artist.songs.first,
+                  fromQueue: artist.songs,
+                ),
+                playButtonColor: Theme.of(context).colorScheme.tertiary,
+                playButtonContentColor: Theme.of(
+                  context,
+                ).colorScheme.onTertiary,
               ),
-              title: Text(artist.name),
-              subtitle: Text('${artist.songs.length} songs'),
-              trailing: const Icon(Icons.arrow_forward_rounded),
-              onTap: () => widget.onOpenArtist(artist.id),
             );
           },
         ),
@@ -521,22 +553,32 @@ class _SearchScreenState extends State<SearchScreen> {
             final selected = _selectedPlaylists.any(
               (item) => item.id == playlist.id,
             );
-            return ListTile(
-              selected: selected,
-              selectedTileColor: Theme.of(
-                context,
-              ).colorScheme.secondaryContainer,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-              leading: PlaylistCover(playlist: playlist, size: 52),
-              title: Text(playlist.name),
-              subtitle: Text('${playlist.songs.length} songs'),
-              trailing: selected
-                  ? const Icon(Icons.check_circle_rounded)
-                  : null,
-              onTap: () => _selectedPlaylists.isNotEmpty
-                  ? _togglePlaylistSelection(playlist)
-                  : widget.onOpenPlaylist(playlist.id),
-              onLongPress: () => _togglePlaylistSelection(playlist),
+            final selectionIndex = _selectedPlaylists.indexWhere(
+              (item) => item.id == playlist.id,
+            );
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: SearchResultMediaCard(
+                title: playlist.name,
+                subtitle: '${playlist.songs.length} songs',
+                leading: PlaylistCover(playlist: playlist, size: 56),
+                selected: selected,
+                selectionIndex: selected ? selectionIndex + 1 : null,
+                selectionMode: _selectedPlaylists.isNotEmpty,
+                onOpen: () => _selectedPlaylists.isNotEmpty
+                    ? _togglePlaylistSelection(playlist)
+                    : widget.onOpenPlaylist(playlist.id),
+                onLongPress: () => _togglePlaylistSelection(playlist),
+                onSelectionToggle: () => _togglePlaylistSelection(playlist),
+                onPlay: playlist.songs.isEmpty
+                    ? null
+                    : () => controller.playSong(
+                        playlist.songs.first,
+                        fromQueue: playlist.songs,
+                      ),
+                playButtonColor: Theme.of(context).colorScheme.primary,
+                playButtonContentColor: Theme.of(context).colorScheme.onPrimary,
+              ),
             );
           },
         ),
@@ -964,100 +1006,12 @@ class _ResultHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
-      child: Text(title, style: Theme.of(context).textTheme.headlineSmall),
-    );
-  }
-}
-
-class _HorizontalResults extends StatelessWidget {
-  const _HorizontalResults({required this.items});
-
-  final List<Widget> items;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 205,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        scrollDirection: Axis.horizontal,
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (context, index) => items[index],
-      ),
-    );
-  }
-}
-
-class _ResultCard extends StatelessWidget {
-  const _ResultCard({
-    required this.title,
-    required this.subtitle,
-    required this.colors,
-    this.mediaStoreId,
-    required this.selected,
-    required this.onTap,
-    required this.onLongPress,
-  });
-
-  final String title;
-  final String subtitle;
-  final List<Color> colors;
-  final int? mediaStoreId;
-  final bool selected;
-  final VoidCallback onTap;
-  final VoidCallback onLongPress;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 144,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.all(selected ? 4 : 0),
-        decoration: BoxDecoration(
-          color: selected
-              ? Theme.of(context).colorScheme.secondaryContainer
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(selected ? 24 : 18),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(selected ? 20 : 18),
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  Artwork(
-                    colors: colors,
-                    size: selected ? 136 : 144,
-                    borderRadius: selected ? 20 : 18,
-                    mediaStoreId: mediaStoreId,
-                  ),
-                  if (selected)
-                    const Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Icon(Icons.check_circle_rounded, size: 30),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
       ),
     );
   }

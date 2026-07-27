@@ -40,7 +40,7 @@ class SongTile extends StatelessWidget {
           : current
           ? colors.primaryContainer.withValues(alpha: .52)
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: current ? BorderRadius.circular(36) : BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap ?? () => controller.playSong(song, fromQueue: queue),
