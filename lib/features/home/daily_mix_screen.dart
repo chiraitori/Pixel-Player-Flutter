@@ -5,6 +5,7 @@ import '../../core/state/app_controller.dart';
 import '../player/full_player.dart';
 import '../player/mini_player.dart';
 import '../../shared/widgets/artwork.dart';
+import '../../shared/widgets/m3_expressive_loading_indicator.dart';
 import '../../shared/widgets/song_tile.dart';
 
 class DailyMixScreen extends StatelessWidget {
@@ -43,7 +44,11 @@ class DailyMixScreen extends StatelessWidget {
               ),
               child: songs.isEmpty
                   ? controller.libraryLoading
-                        ? const Center(child: CircularProgressIndicator())
+                        ? const Center(
+                            child: M3ExpressiveLoadingIndicator(
+                              contained: true,
+                            ),
+                          )
                         : const _DailyMixEmptyState()
                   : CustomScrollView(
                       slivers: [

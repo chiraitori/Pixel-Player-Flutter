@@ -33,107 +33,133 @@ class SongTile extends StatelessWidget {
     final controller = AppScope.of(context);
     final current = controller.currentSong?.id == song.id;
     final colors = Theme.of(context).colorScheme;
+    final selectionMode = onTap != null && onLongPress != null;
+    final containerColor = selected
+        ? colors.secondaryContainer
+        : current
+        ? colors.primaryContainer
+        : colors.surfaceContainerLow;
+    final contentColor = selected
+        ? colors.onSecondaryContainer
+        : current
+        ? colors.onPrimaryContainer
+        : colors.onSurface;
+    final radius = current ? 50.0 : 22.0;
 
-    return Material(
-      color: selected
-          ? colors.secondaryContainer
-          : current
-          ? colors.primaryContainer.withValues(alpha: .52)
-          : Colors.transparent,
-      borderRadius: current ? BorderRadius.circular(36) : BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap ?? () => controller.playSong(song, fromQueue: queue),
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              if (selected)
-                SizedBox(
-                  width: showTrackNumber ? 34 : 52,
-                  height: showTrackNumber ? 34 : 52,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        '${selectionIndex ?? 1}',
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: colors.onPrimary,
-                              fontWeight: FontWeight.w700,
+    return AnimatedScale(
+      scale: selected ? .98 : 1,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.fastOutSlowIn,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.fastOutSlowIn,
+        decoration: ShapeDecoration(
+          color: containerColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(radius),
+            side: selected
+                ? BorderSide(color: colors.primary, width: 2.5)
+                : BorderSide.none,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap ?? () => controller.playSong(song, fromQueue: queue),
+            onLongPress: onLongPress,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+              child: Row(
+                children: [
+                  if (!showTrackNumber) ...[
+                    Stack(
+                      children: [
+                        Artwork(
+                          colors: song.colors,
+                          size: 50,
+                          borderRadius: current ? 50 : 10,
+                          mediaStoreId: song.mediaStoreId,
+                        ),
+                        if (selected)
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: colors.primary.withValues(alpha: .7),
+                                borderRadius: BorderRadius.circular(
+                                  current ? 50 : 10,
+                                ),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  '${selectionIndex ?? 1}',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        color: colors.onPrimary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                ),
+                              ),
                             ),
-                      ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(width: 14),
+                  ] else
+                    const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: contentColor,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          song.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: contentColor.withValues(alpha: .7),
+                              ),
+                        ),
+                      ],
                     ),
                   ),
-                )
-              else if (showTrackNumber)
-                SizedBox(
-                  width: 34,
-                  child: current
-                      ? Icon(
-                          controller.isPlaying
-                              ? Icons.graphic_eq_rounded
-                              : Icons.pause_rounded,
-                          color: colors.primary,
-                        )
-                      : Text(
-                          '${song.track}',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: colors.onSurfaceVariant),
-                        ),
-                )
-              else
-                Artwork(
-                  colors: song.colors,
-                  size: 52,
-                  borderRadius: 10,
-                  mediaStoreId: song.mediaStoreId,
-                ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: controller.currentSong?.id == song.id
-                            ? colors.primary
-                            : null,
-                        fontWeight: controller.currentSong?.id == song.id
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                      ),
-                    ),
-                    Text(
-                      '${song.artist} • ${song.album}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
+                  if (current && !selectionMode) ...[
+                    const SizedBox(width: 12),
+                    Icon(
+                      controller.isPlaying
+                          ? Icons.graphic_eq_rounded
+                          : Icons.pause_rounded,
+                      color: contentColor,
+                      size: 18,
                     ),
                   ],
-                ),
+                  if (!selectionMode) ...[
+                    const SizedBox(width: 12),
+                    _MoreButton(
+                      color: current
+                          ? colors.primaryContainer
+                          : colors.onSurface,
+                      backgroundColor: current
+                          ? colors.onPrimaryContainer
+                          : colors.surfaceContainerHigh,
+                      onTap: onMore ?? () => showMenu(context),
+                      tooltip: 'More options for ${song.title}',
+                    ),
+                  ],
+                ],
               ),
-              Text(
-                song.durationLabel,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-              IconButton(
-                onPressed: onMore ?? () => showMenu(context),
-                icon: const Icon(Icons.more_vert_rounded),
-                tooltip: 'More options',
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -325,6 +351,51 @@ class SongTile extends StatelessWidget {
             if (song.mimeType != null) _InfoLine('Format', song.mimeType!),
             if (song.path != null) _InfoLine('Path', song.path!),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MoreButton extends StatelessWidget {
+  const _MoreButton({
+    required this.color,
+    required this.backgroundColor,
+    required this.onTap,
+    required this.tooltip,
+  });
+
+  final Color color;
+  final Color backgroundColor;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: InkResponse(
+          onTap: onTap,
+          radius: 22,
+          containedInkWell: false,
+          child: SizedBox.square(
+            dimension: 44,
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: backgroundColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.more_vert_rounded, color: color, size: 24),
+              ),
+            ),
+          ),
         ),
       ),
     );

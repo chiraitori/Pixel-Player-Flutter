@@ -59,6 +59,14 @@ void main() {
     expect(find.byIcon(Icons.sort_rounded), findsOneWidget);
     expect(find.text(MockLibrary.songs.first.title), findsOneWidget);
     expect(find.text(MockLibrary.songs.first.artist), findsWidgets);
+    expect(LibrarySection.values.map((section) => section.label), const [
+      'Songs',
+      'Albums',
+      'Artists',
+      'Playlists',
+      'Folders',
+      'Liked',
+    ]);
     expect(tester.takeException(), isNull);
   });
 
@@ -95,6 +103,8 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('library-section-segment')));
     await tester.pumpAndSettle();
+    expect(find.text('Genres'), findsNothing);
+    expect(find.text('Liked'), findsOneWidget);
     await tester.tap(find.text('Albums').last);
     await tester.pumpAndSettle();
 

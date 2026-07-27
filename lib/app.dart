@@ -5,6 +5,7 @@ import 'core/state/app_controller.dart';
 import 'core/theme/pixelplay_theme.dart';
 import 'features/setup/setup_screen.dart';
 import 'features/shell/app_shell.dart';
+import 'shared/widgets/m3_expressive_loading_indicator.dart';
 
 class PixelPlayApp extends StatefulWidget {
   const PixelPlayApp({
@@ -106,10 +107,7 @@ class _AppLoadingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(
-        child: SizedBox.square(
-          dimension: 32,
-          child: CircularProgressIndicator(strokeWidth: 3),
-        ),
+        child: M3ExpressiveLoadingIndicator(contained: true, size: 36),
       ),
     );
   }

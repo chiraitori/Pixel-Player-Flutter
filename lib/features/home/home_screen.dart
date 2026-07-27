@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/song.dart';
 import '../../core/state/app_controller.dart';
 import '../../shared/widgets/artwork.dart';
+import '../../shared/widgets/m3_expressive_loading_indicator.dart';
 import '../player/mini_player.dart';
 import '../shell/player_internal_navigation_bar.dart';
 import 'widgets/album_art_collage.dart';
@@ -245,13 +246,19 @@ class _YourMixLoadingPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
-      height: 256,
-      child: Center(
-        child: SizedBox(
-          width: 128,
-          height: 128,
-          child: CircularProgressIndicator(strokeWidth: 7),
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      child: Container(
+        height: 220,
+        decoration: ShapeDecoration(
+          color: colors.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+        ),
+        child: const Center(
+          child: M3ExpressiveLoadingIndicator(contained: true, size: 36),
         ),
       ),
     );

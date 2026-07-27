@@ -15,9 +15,8 @@ enum LibrarySection {
   albums('Albums', Icons.album_rounded),
   artists('Artists', Icons.person_rounded),
   playlists('Playlists', Icons.queue_music_rounded),
-  genres('Genres', Icons.category_rounded),
   folders('Folders', Icons.folder_rounded),
-  favorites('Favorites', Icons.favorite_rounded);
+  favorites('Liked', Icons.favorite_rounded);
 
   const LibrarySection(this.label, this.icon);
   final String label;
@@ -240,14 +239,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               selectedIds: _selectedMediaIds,
                               onOpen: widget.onOpenAlbum,
                               onToggleSelection: _toggleMediaSelection,
-                              onToggleLayout: () =>
-                                  setState(() => _grid = !_grid),
                             ),
                             _ArtistsTab(
                               artists: artists,
-                              selectedIds: _selectedMediaIds,
                               onOpen: widget.onOpenArtist,
-                              onToggleSelection: _toggleMediaSelection,
                             ),
                             _PlaylistsTab(
                               playlists: playlists,
@@ -255,12 +250,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               onOpen: widget.onOpenPlaylist,
                               onToggleSelection: _toggleMediaSelection,
                               onCreate: widget.onCreatePlaylist,
-                            ),
-                            _GenresTab(
-                              songs: songs,
-                              selectedIds: _selectedMediaIds,
-                              onOpen: widget.onOpenGenre,
-                              onToggleSelection: _toggleMediaSelection,
                             ),
                             _FoldersTab(songs: songs),
                             _SongsTab(
@@ -395,10 +384,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _selectedMediaIds
           ..clear()
           ..addAll(playlists.map((playlist) => playlist.id));
-      case LibrarySection.genres:
-        _selectedMediaIds
-          ..clear()
-          ..addAll(songs.map((song) => song.genre));
       case LibrarySection.folders:
         break;
     }
@@ -424,9 +409,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
         playlists
             .where((playlist) => _selectedMediaIds.contains(playlist.id))
             .expand((playlist) => playlist.songs),
-      LibrarySection.genres => songs.where(
-        (song) => _selectedMediaIds.contains(song.genre),
-      ),
       LibrarySection.folders => const <Song>[],
     };
     final byId = <String, Song>{};
@@ -789,15 +771,49 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ],
                 ),
               ),
-              SwitchListTile(
-                value: _grid,
-                onChanged: (value) {
-                  setState(() => _grid = value);
-                  Navigator.pop(context);
-                },
-                title: const Text('Grid view'),
-                secondary: const Icon(Icons.grid_view_rounded),
-              ),
+              if (_section == LibrarySection.albums) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 10, bottom: 8),
+                    child: Text(
+                      'View',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment<bool>(
+                        value: true,
+                        icon: Icon(Icons.view_module_rounded),
+                        label: Text('Grid'),
+                      ),
+                      ButtonSegment<bool>(
+                        value: false,
+                        icon: Icon(Icons.view_list_rounded),
+                        label: Text('List'),
+                      ),
+                    ],
+                    selected: {_grid},
+                    onSelectionChanged: (selection) {
+                      setState(() => _grid = selection.first);
+                    },
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      shape: WidgetStatePropertyAll(
+                        RoundedRectangleBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(32)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1185,7 +1201,6 @@ class _AlbumsTab extends StatelessWidget {
     required this.selectedIds,
     required this.onOpen,
     required this.onToggleSelection,
-    required this.onToggleLayout,
   });
 
   final List<Album> albums;
@@ -1193,7 +1208,6 @@ class _AlbumsTab extends StatelessWidget {
   final Set<String> selectedIds;
   final ValueChanged<String> onOpen;
   final ValueChanged<String> onToggleSelection;
-  final VoidCallback onToggleLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -1206,18 +1220,12 @@ class _AlbumsTab extends StatelessWidget {
       );
     }
     if (!grid) {
-      return ListView.builder(
-        padding: const EdgeInsets.only(bottom: 224),
-        itemCount: albums.length + 1,
+      return ListView.separated(
+        padding: const EdgeInsets.fromLTRB(14, 4, 14, 224),
+        itemCount: albums.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
-          if (index == 0) {
-            return _LayoutToggle(
-              grid: grid,
-              albumCount: albums.length,
-              onTap: onToggleLayout,
-            );
-          }
-          final album = albums[index - 1];
+          final album = albums[index];
           final selected = selectedIds.contains(album.id);
           return ListTile(
             selected: selected,
@@ -1245,103 +1253,83 @@ class _AlbumsTab extends StatelessWidget {
         },
       );
     }
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: _LayoutToggle(
-            grid: grid,
-            albumCount: albums.length,
-            onTap: onToggleLayout,
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 224),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: .78,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
+      ),
+      itemCount: albums.length,
+      itemBuilder: (context, index) {
+        final album = albums[index];
+        final selected = selectedIds.contains(album.id);
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: EdgeInsets.all(selected ? 4 : 0),
+          decoration: BoxDecoration(
+            color: selected
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(selected ? 28 : 20),
           ),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 224),
-          sliver: SliverGrid.builder(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: .78,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 16,
-            ),
-            itemCount: albums.length,
-            itemBuilder: (context, index) {
-              final album = albums[index];
-              final selected = selectedIds.contains(album.id);
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: EdgeInsets.all(selected ? 4 : 0),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Theme.of(context).colorScheme.secondaryContainer
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(selected ? 28 : 20),
-                ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(selected ? 24 : 20),
-                  onTap: () => selectedIds.isNotEmpty
-                      ? onToggleSelection(album.id)
-                      : onOpen(album.id),
-                  onLongPress: () => onToggleSelection(album.id),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(selected ? 24 : 20),
+            onTap: () => selectedIds.isNotEmpty
+                ? onToggleSelection(album.id)
+                : onOpen(album.id),
+            onLongPress: () => onToggleSelection(album.id),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Expanded(
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Artwork(
-                              colors: album.colors,
-                              borderRadius: selected ? 24 : 20,
-                              mediaStoreId: album.songs.first.mediaStoreId,
-                            ),
-                            if (selected)
-                              const Positioned(
-                                top: 8,
-                                right: 8,
-                                child: _MediaSelectionBadge(),
-                              ),
-                          ],
+                      Artwork(
+                        colors: album.colors,
+                        borderRadius: selected ? 24 : 20,
+                        mediaStoreId: album.songs.first.mediaStoreId,
+                      ),
+                      if (selected)
+                        const Positioned(
+                          top: 8,
+                          right: 8,
+                          child: _MediaSelectionBadge(),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        album.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      Text(
-                        album.artist,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
                     ],
                   ),
                 ),
-              );
-            },
+                const SizedBox(height: 8),
+                Text(
+                  album.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  album.artist,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 }
 
 class _ArtistsTab extends StatelessWidget {
-  const _ArtistsTab({
-    required this.artists,
-    required this.selectedIds,
-    required this.onOpen,
-    required this.onToggleSelection,
-  });
+  const _ArtistsTab({required this.artists, required this.onOpen});
 
   final List<Artist> artists;
-  final Set<String> selectedIds;
   final ValueChanged<String> onOpen;
-  final ValueChanged<String> onToggleSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -1352,37 +1340,57 @@ class _ArtistsTab extends StatelessWidget {
         subtitle: 'Artists are shown after songs are indexed from any source.',
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 224),
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 224),
       itemCount: artists.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final artist = artists[index];
-        final selected = selectedIds.contains(artist.id);
-        return ListTile(
-          selected: selected,
-          selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 8,
-          ),
-          leading: ClipOval(
-            child: Artwork(
-              colors: artist.colors,
-              size: 68,
-              borderRadius: 0,
-              mediaStoreId: artist.songs.first.mediaStoreId,
+        return Card(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => onOpen(artist.id),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  ClipOval(
+                    child: Artwork(
+                      colors: artist.colors,
+                      size: 48,
+                      borderRadius: 0,
+                      mediaStoreId: artist.songs.first.mediaStoreId,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          artist.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          '${artist.songs.length} songs',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          title: Text(
-            artist.name,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          subtitle: Text('${artist.songs.length} songs'),
-          trailing: selected ? const _MediaSelectionBadge() : null,
-          onTap: () => selectedIds.isNotEmpty
-              ? onToggleSelection(artist.id)
-              : onOpen(artist.id),
-          onLongPress: () => onToggleSelection(artist.id),
         );
       },
     );
@@ -1469,90 +1477,6 @@ class _PlaylistsTab extends StatelessWidget {
                 ? onToggleSelection(playlist.id)
                 : onOpen(playlist.id),
             onLongPress: () => onToggleSelection(playlist.id),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _GenresTab extends StatelessWidget {
-  const _GenresTab({
-    required this.songs,
-    required this.selectedIds,
-    required this.onOpen,
-    required this.onToggleSelection,
-  });
-
-  final List<Song> songs;
-  final Set<String> selectedIds;
-  final ValueChanged<String> onOpen;
-  final ValueChanged<String> onToggleSelection;
-
-  @override
-  Widget build(BuildContext context) {
-    final genres = songs.map((song) => song.genre).toSet().toList();
-    if (genres.isEmpty) {
-      return const LibraryEmptyState(
-        icon: Icons.category_rounded,
-        title: 'No genres available',
-        subtitle: 'Genres appear after songs with genre metadata are indexed.',
-      );
-    }
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 224),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 1.32,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: genres.length,
-      itemBuilder: (context, index) {
-        final genre = genres[index];
-        final song = songs.firstWhere((item) => item.genre == genre);
-        final selected = selectedIds.contains(genre);
-        return Material(
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : song.colors.first,
-          borderRadius: BorderRadius.circular(selected ? 34 : 26),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => selectedIds.isNotEmpty
-                ? onToggleSelection(genre)
-                : onOpen(genre),
-            onLongPress: () => onToggleSelection(genre),
-            child: Stack(
-              children: [
-                Positioned(
-                  right: -20,
-                  bottom: -24,
-                  child: Icon(
-                    Icons.music_note_rounded,
-                    size: 100,
-                    color: Colors.white.withValues(alpha: .16),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Text(
-                    genre,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                if (selected)
-                  const Positioned(
-                    right: 12,
-                    top: 12,
-                    child: _MediaSelectionBadge(),
-                  ),
-              ],
-            ),
           ),
         );
       },
@@ -2090,37 +2014,6 @@ class _LibrarySongItem extends StatelessWidget {
                 ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _LayoutToggle extends StatelessWidget {
-  const _LayoutToggle({
-    required this.grid,
-    required this.albumCount,
-    required this.onTap,
-  });
-
-  final bool grid;
-  final int albumCount;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 4, 10, 8),
-      child: Row(
-        children: [
-          Text('$albumCount albums'),
-          const Spacer(),
-          IconButton(
-            onPressed: onTap,
-            icon: Icon(
-              grid ? Icons.view_list_rounded : Icons.grid_view_rounded,
-            ),
-          ),
-        ],
       ),
     );
   }

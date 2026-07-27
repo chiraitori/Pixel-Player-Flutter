@@ -487,7 +487,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 leading: Artwork(
                   colors: album.colors,
                   size: 56,
-                  borderRadius: 22,
+                  borderRadius: 26,
                   mediaStoreId: album.songs.first.mediaStoreId,
                 ),
                 selected: selected,
@@ -1027,25 +1027,30 @@ class _EmptyResults extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(30),
+        padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.search_off_rounded,
-              size: 86,
-              color: colors.onSurfaceVariant,
+              Icons.search_rounded,
+              size: 64,
+              color: colors.primary.withValues(alpha: .6),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text(
               'No results for “$query”',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineSmall,
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
               'Try a different search or change the filters.',
-              style: TextStyle(color: colors.onSurfaceVariant),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: colors.onSurface.withValues(alpha: .7),
+              ),
             ),
           ],
         ),

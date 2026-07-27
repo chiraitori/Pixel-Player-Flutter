@@ -7,6 +7,9 @@ import 'package:pixelplayer_flutter/core/state/app_controller.dart';
 import 'package:pixelplayer_flutter/core/theme/genre_theme.dart';
 import 'package:pixelplayer_flutter/core/theme/pixelplay_theme.dart';
 import 'package:pixelplayer_flutter/features/home/daily_mix_screen.dart';
+import 'package:pixelplayer_flutter/features/search/search_screen.dart';
+import 'package:pixelplayer_flutter/features/search/widgets/genre_categories_grid.dart';
+import 'package:pixelplayer_flutter/features/search/widgets/search_result_media_card.dart';
 import 'package:pixelplayer_flutter/features/shell/app_shell.dart';
 
 import 'fixtures/mock_library.dart';
@@ -390,6 +393,87 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('DAILY\nMIX'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('genre list keeps the Kotlin fixed 100dp card height', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true)
+      ..setBoolSetting('search_genre_grid', false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: GenreCategoriesGrid(
+              genres: const ['Alternative', 'Dream Pop'],
+              selectedGenres: const [],
+              onGenreClick: (_) {},
+              onSelectionToggle: (_) {},
+              onSelectAll: () {},
+              onClearSelection: () {},
+              onSelectionOptions: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Browse by genre'), findsOneWidget);
+    expect(tester.getSize(find.byType(Card).first).height, 100);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Search uses the Kotlin bar and vertical media result cards', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true)
+      ..songs = MockLibrary.songs
+      ..libraryLoading = false;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SearchScreen(
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onOpenSettings: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(tester.getSize(find.byType(SearchBar)).height, 56);
+    expect(find.text('Browse by genre'), findsOneWidget);
+
+    await tester.enterText(find.byType(SearchBar), 'Luna');
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('Albums'), findsWidgets);
+    expect(find.text('Artists'), findsWidgets);
+    expect(find.byType(SearchResultMediaCard), findsWidgets);
+    expect(tester.getSize(find.byType(SearchResultMediaCard).first).height, 80);
     expect(tester.takeException(), isNull);
   });
 }

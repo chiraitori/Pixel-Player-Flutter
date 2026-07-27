@@ -34,9 +34,6 @@ class GenreCategoriesGrid extends StatelessWidget {
     final navigationBarHeight = controller.navBarCompactMode ? 64.0 : 90.0;
     final bottomContentPadding =
         28.0 + navigationBarHeight + systemBottomInset + 64.0;
-    if (genres.isEmpty) {
-      return const Center(child: Text('No genres available'));
-    }
     return Column(
       children: [
         if (selectedGenres.isNotEmpty)
@@ -94,11 +91,14 @@ class GenreCategoriesGrid extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(6, 6, 0, 6),
                       child: Row(
                         children: [
-                          Text(
-                            'Browse by genre',
-                            style: Theme.of(context).textTheme.titleLarge,
+                          Expanded(
+                            child: Text(
+                              'Browse by genre',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
                           ),
-                          const Spacer(),
                           TweenAnimationBuilder<double>(
                             tween: Tween(end: grid ? 50 : 12),
                             duration: const Duration(milliseconds: 200),

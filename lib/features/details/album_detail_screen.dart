@@ -349,9 +349,7 @@ class _AlbumSongTile extends StatelessWidget {
     final current = controller.currentSong?.id == song.id;
     return Material(
       color: current ? colors.primaryContainer : colors.surfaceContainerLow,
-      borderRadius: current
-          ? BorderRadius.circular(36)
-          : BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(22),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () => controller.playSong(song, fromQueue: queue),
