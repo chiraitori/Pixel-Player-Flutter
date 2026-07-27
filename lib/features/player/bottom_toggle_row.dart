@@ -21,59 +21,59 @@ class BottomToggleRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final inactiveBackground = colors.onSurface.withValues(alpha: .07);
+    final containerBg = colors.surfaceContainer;
+    final inactiveBg = colors.surfaceContainerHighest;
+    final inactiveIconColor = colors.onSurfaceVariant;
+
     return Container(
-      constraints: const BoxConstraints(minHeight: 52, maxHeight: 86),
-      margin: const EdgeInsets.fromLTRB(26, 0, 26, 6),
-      padding: const EdgeInsets.all(6),
-      clipBehavior: Clip.antiAlias,
+      height: 68,
+      margin: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.all(8),
       decoration: ShapeDecoration(
-        color: colors.surfaceContainerLowest.withValues(alpha: .7),
-        shape: const RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.all(Radius.circular(60)),
-        ),
+        color: containerBg,
+        shape: const StadiumBorder(),
       ),
       child: Row(
         children: [
           Expanded(
             child: _ToggleSegment(
               active: shuffleEnabled,
-              activeColor: colors.primaryFixed,
-              activeContentColor: colors.onPrimaryFixed,
-              inactiveColor: inactiveBackground,
-              inactiveContentColor: colors.onSurface,
+              activeColor: colors.primary,
+              activeContentColor: colors.onPrimary,
+              inactiveColor: inactiveBg,
+              inactiveContentColor: inactiveIconColor,
               icon: Icons.shuffle_rounded,
-              label: 'Aleatorio',
+              label: 'Shuffle',
               onTap: onShuffle,
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: _ToggleSegment(
               active: repeatMode != 0,
-              activeColor: colors.secondaryFixed,
-              activeContentColor: colors.onSecondaryFixed,
-              inactiveColor: inactiveBackground,
-              inactiveContentColor: colors.onSurface,
+              activeColor: colors.secondary,
+              activeContentColor: colors.onSecondary,
+              inactiveColor: inactiveBg,
+              inactiveContentColor: inactiveIconColor,
               icon: repeatMode == 1
                   ? Icons.repeat_one_rounded
                   : Icons.repeat_rounded,
-              label: 'Repetir',
+              label: 'Repeat',
               onTap: onRepeat,
             ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: _ToggleSegment(
               active: favorite,
-              activeColor: colors.tertiaryFixed,
-              activeContentColor: colors.onTertiaryFixed,
-              inactiveColor: inactiveBackground,
-              inactiveContentColor: colors.onSurface,
+              activeColor: colors.tertiary,
+              activeContentColor: colors.onTertiary,
+              inactiveColor: inactiveBg,
+              inactiveContentColor: inactiveIconColor,
               icon: favorite
                   ? Icons.favorite_rounded
                   : Icons.favorite_border_rounded,
-              label: 'Favorito',
+              label: 'Favorite',
               onTap: onFavorite,
             ),
           ),
@@ -108,10 +108,10 @@ class _ToggleSegment extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
+      curve: Curves.fastOutSlowIn,
       decoration: BoxDecoration(
         color: active ? activeColor : inactiveColor,
-        borderRadius: BorderRadius.circular(active ? 60 : 8),
+        borderRadius: BorderRadius.circular(active ? 60 : 18),
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(
@@ -123,7 +123,7 @@ class _ToggleSegment extends StatelessWidget {
               duration: const Duration(milliseconds: 200),
               child: Icon(
                 icon,
-                key: ValueKey(icon),
+                key: ValueKey(icon.hashCode ^ active.hashCode),
                 size: 24,
                 color: active ? activeContentColor : inactiveContentColor,
                 semanticLabel: label,

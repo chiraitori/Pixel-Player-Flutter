@@ -108,10 +108,8 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                   children: [
                     Text(
                       'Connect device',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 24,
-                          ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w600, fontSize: 24),
                     ),
                   ],
                 ),
@@ -154,7 +152,7 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                       Expanded(
                         child: _SegmentTabButton(
                           label: 'CONTROLS',
-                          icon: Icons.tune_rounded,
+                          icon: Icons.speaker_rounded,
                           isSelected: _selectedTab == 0,
                           onTap: () => _onTabSelected(0),
                         ),
@@ -162,7 +160,7 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                       Expanded(
                         child: _SegmentTabButton(
                           label: 'DEVICES',
-                          icon: Icons.devices_rounded,
+                          icon: Icons.devices,
                           isSelected: _selectedTab == 1,
                           onTap: () => _onTabSelected(1),
                         ),
@@ -191,20 +189,20 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
     final deviceTitle = isCastConnected
         ? (cast.routeName ?? 'Cast Device')
         : isBt
-            ? (_bluetoothName ?? 'Bluetooth Audio')
-            : 'This phone';
+        ? (_bluetoothName ?? 'Bluetooth Audio')
+        : 'This phone';
 
     final deviceSubtitle = isCastConnected
         ? 'Google Cast • Connected'
         : isBt
-            ? 'Bluetooth output • ${isPlaying ? "Playing" : "Paused"}'
-            : 'Local playback • ${isPlaying ? "Paused" : "Paused"}';
+        ? 'Bluetooth output • ${isPlaying ? "Playing" : "Paused"}'
+        : 'Local playback • ${isPlaying ? "Paused" : "Paused"}';
 
     final deviceIcon = isCastConnected
         ? Icons.cast_connected_rounded
         : isBt
-            ? Icons.bluetooth_audio_rounded
-            : Icons.headphones_rounded;
+        ? Icons.bluetooth_audio_rounded
+        : Icons.headphones_rounded;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -228,7 +226,9 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                       width: 54,
                       height: 54,
                       decoration: ShapeDecoration(
-                        color: colors.onTertiaryContainer.withValues(alpha: 0.14),
+                        color: colors.onTertiaryContainer.withValues(
+                          alpha: 0.14,
+                        ),
                         shape: const CircleBorder(),
                       ),
                       child: Icon(
@@ -244,9 +244,7 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                         children: [
                           Text(
                             deviceTitle,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
+                            style: Theme.of(context).textTheme.titleLarge
                                 ?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: colors.onTertiaryContainer,
@@ -257,12 +255,11 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                           const SizedBox(height: 2),
                           Text(
                             deviceSubtitle,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
+                            style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(
-                                  color: colors.onTertiaryContainer
-                                      .withValues(alpha: 0.8),
+                                  color: colors.onTertiaryContainer.withValues(
+                                    alpha: 0.8,
+                                  ),
                                 ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -282,16 +279,16 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                     Text(
                       'Phone volume',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: colors.onTertiaryContainer,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: colors.onTertiaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Text(
                       '${(_volume * 100).round()}%',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: colors.onTertiaryContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        color: colors.onTertiaryContainer,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -305,8 +302,9 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                       trackHeight: 28,
                       thumbShape: SliderComponentShape.noThumb,
                       activeTrackColor: colors.onTertiaryContainer,
-                      inactiveTrackColor:
-                          colors.onTertiaryContainer.withValues(alpha: 0.2),
+                      inactiveTrackColor: colors.onTertiaryContainer.withValues(
+                        alpha: 0.2,
+                      ),
                       overlayShape: SliderComponentShape.noOverlay,
                     ),
                     child: Slider(
@@ -333,14 +331,14 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                   Text(
                     'Connectivity',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   Text(
                     'Manage active radios and rescan',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -427,16 +425,16 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                     children: [
                       Text(
                         'Nearby devices',
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        devices.isNotEmpty ? 'Tap to connect' : 'No devices yet',
+                        devices.isNotEmpty
+                            ? 'Tap to connect'
+                            : 'No devices yet',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
+                          color: colors.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -468,25 +466,20 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                   ),
                   child: Column(
                     children: [
-                      Icon(
-                        Icons.devices_other_rounded,
-                        size: 44,
-                        color: colors.primary,
-                      ),
+                      Icon(Icons.devices, size: 36, color: colors.primary),
                       const SizedBox(height: 12),
                       Text(
                         'Searching for devices…',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 6),
                       Text(
                         'Make sure your TV or speaker is on and sharing the same Wi-Fi network.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                            ),
+                          color: colors.onSurfaceVariant,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -508,7 +501,10 @@ class __CastBottomSheetContentState extends State<_CastBottomSheetContent> {
                       ),
                       subtitle: Text(device.modelName ?? 'Google Cast'),
                       trailing: cast.routeName == device.friendlyName
-                          ? Icon(Icons.check_circle_rounded, color: colors.primary)
+                          ? Icon(
+                              Icons.check_circle_rounded,
+                              color: colors.primary,
+                            )
                           : const Icon(Icons.chevron_right_rounded),
                       onTap: () async {
                         Navigator.pop(context);
@@ -637,16 +633,16 @@ class _QuickSettingTile extends StatelessWidget {
                     Text(
                       label,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
                       subtitle,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
+                        color: colors.onSurfaceVariant,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

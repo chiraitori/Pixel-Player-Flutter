@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class FullPlayerTopBar extends StatelessWidget {
   const FullPlayerTopBar({
@@ -111,17 +112,34 @@ class FullPlayerTopBar extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              remoteRouteName != null || isCastConnecting
-                                  ? Icons.cast_rounded
-                                  : isBluetoothActive
-                                  ? Icons.bluetooth_rounded
-                                  : Icons.speaker_rounded,
-                              size: 24,
-                              color: colors.primary,
-                              semanticLabel: bluetoothName == null
+                            Semantics(
+                              label: bluetoothName == null
                                   ? 'Audio output'
                                   : 'Audio output: $bluetoothName',
+                              child: ExcludeSemantics(
+                                child:
+                                    remoteRouteName != null || isCastConnecting
+                                    ? Icon(
+                                        Icons.cast_rounded,
+                                        size: 24,
+                                        color: colors.primary,
+                                      )
+                                    : isBluetoothActive
+                                    ? Icon(
+                                        Icons.bluetooth_rounded,
+                                        size: 24,
+                                        color: colors.primary,
+                                      )
+                                    : SvgPicture.asset(
+                                        'assets/icons/mobile_speaker.svg',
+                                        width: 24,
+                                        height: 24,
+                                        colorFilter: ColorFilter.mode(
+                                          colors.primary,
+                                          BlendMode.srcIn,
+                                        ),
+                                      ),
+                              ),
                             ),
                             if (showCastLabel) ...[
                               const SizedBox(width: 8),
