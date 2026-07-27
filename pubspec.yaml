@@ -27,7 +27,7 @@ dependencies:
   palette_generator: ^0.3.3+3
   google_sign_in: ^7.2.0
   wakelock_plus: ^1.5.2
-  xml: ^6.6.1
+  xml: ^7.0.1
   flutter_taglib: ^1.4.1
   romanize: ^0.0.3
   share_plus: ^12.0.2
