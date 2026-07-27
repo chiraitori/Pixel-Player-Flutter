@@ -27,56 +27,62 @@ class BottomToggleRow extends StatelessWidget {
 
     return Container(
       height: 72,
-      padding: const EdgeInsets.all(8),
       decoration: ShapeDecoration(
         color: containerBg,
         shape: const StadiumBorder(),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ToggleSegment(
-              active: shuffleEnabled,
-              activeColor: colors.primary,
-              activeContentColor: colors.onPrimary,
-              inactiveColor: inactiveBg,
-              inactiveContentColor: inactiveIconColor,
-              icon: Icons.shuffle_rounded,
-              label: 'Shuffle',
-              onTap: onShuffle,
-            ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: ClipPath(
+          clipper: const ShapeBorderClipper(shape: StadiumBorder()),
+          child: Row(
+            children: [
+              Expanded(
+                child: _ToggleSegment(
+                  active: shuffleEnabled,
+                  activeColor: colors.primary,
+                  activeContentColor: colors.onPrimary,
+                  inactiveColor: inactiveBg,
+                  inactiveContentColor: inactiveIconColor,
+                  icon: Icons.shuffle_rounded,
+                  label: 'Shuffle',
+                  onTap: onShuffle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ToggleSegment(
+                  active: repeatMode != 0,
+                  activeColor: colors.secondary,
+                  activeContentColor: colors.onSecondary,
+                  inactiveColor: inactiveBg,
+                  inactiveContentColor: inactiveIconColor,
+                  icon: repeatMode == 1
+                      ? Icons.repeat_one_rounded
+                      : Icons.repeat_rounded,
+                  label: 'Repeat',
+                  onTap: onRepeat,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ToggleSegment(
+                  active: favorite,
+                  activeColor: colors.tertiary,
+                  activeContentColor: colors.onTertiary,
+                  inactiveColor: inactiveBg,
+                  inactiveContentColor: inactiveIconColor,
+                  icon: favorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  label: 'Favorite',
+                  onTap: onFavorite,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ToggleSegment(
-              active: repeatMode != 0,
-              activeColor: colors.secondary,
-              activeContentColor: colors.onSecondary,
-              inactiveColor: inactiveBg,
-              inactiveContentColor: inactiveIconColor,
-              icon: repeatMode == 1
-                  ? Icons.repeat_one_rounded
-                  : Icons.repeat_rounded,
-              label: 'Repeat',
-              onTap: onRepeat,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _ToggleSegment(
-              active: favorite,
-              activeColor: colors.tertiary,
-              activeContentColor: colors.onTertiary,
-              inactiveColor: inactiveBg,
-              inactiveContentColor: inactiveIconColor,
-              icon: favorite
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              label: 'Favorite',
-              onTap: onFavorite,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
