@@ -20,11 +20,7 @@ class HomeTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      color: colors.surfaceContainerHighest.withValues(
-        alpha: isScrolled ? 1 : 0,
-      ),
+    return SizedBox(
       height: 64,
       child: Row(
         children: [

@@ -102,6 +102,12 @@ class _HomeScreenState extends State<HomeScreen> {
               scrolledUnderElevation: 0,
               backgroundColor: Colors.transparent,
               automaticallyImplyLeading: false,
+              flexibleSpace: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                color: colors.surfaceContainerHighest.withValues(
+                  alpha: _scrolledPastThreshold ? 1 : 0,
+                ),
+              ),
               titleSpacing: 0,
               title: SizedBox(
                 width: MediaQuery.sizeOf(context).width,
