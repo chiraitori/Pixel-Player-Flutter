@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/models/song.dart';
 import '../../core/state/app_controller.dart';
+import '../../core/theme/player_palette_cache.dart';
 import '../../shared/widgets/artwork.dart';
 import '../../shared/widgets/auto_scrolling_text.dart';
 import '../shell/player_internal_navigation_bar.dart';
@@ -27,6 +31,8 @@ class _MiniPlayerState extends State<MiniPlayer>
   late final AnimationController _horizontalOffset;
   _DismissDragPhase _phase = _DismissDragPhase.idle;
   double _accumulatedDragX = 0;
+  String? _paletteSongId;
+  Color? _artworkSeed;
 
   @override
   void initState() {
@@ -99,13 +105,53 @@ class _MiniPlayerState extends State<MiniPlayer>
     );
   }
 
+  void _syncArtworkSeed(Song song) {
+    if (_paletteSongId == song.id) return;
+    _paletteSongId = song.id;
+    _artworkSeed = song.colors.isEmpty ? Colors.deepPurple : song.colors.first;
+
+    final requestedSongId = song.id;
+    unawaited(() async {
+      final seed = await PlayerPaletteCache.seedFor(song);
+      if (!mounted || _paletteSongId != requestedSongId) return;
+      setState(() => _artworkSeed = seed);
+    }());
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final song = controller.currentSong;
     if (song == null) return const SizedBox.shrink();
+    _syncArtworkSeed(song);
 
-    final colors = Theme.of(context).colorScheme;
+    final appColors = Theme.of(context).colorScheme;
+    final useAlbumColors =
+        controller.stringSetting(
+          'appearance_player_palette',
+          controller.boolSetting('appearance_use_album_colors', true)
+              ? 'Album Art'
+              : 'System Dynamic',
+        ) ==
+        'Album Art';
+    final variant = switch (controller.stringSetting(
+      'appearance_palette_style',
+      'Tonal spot',
+    )) {
+      'Tonal spot' => DynamicSchemeVariant.tonalSpot,
+      'Vibrant' => DynamicSchemeVariant.vibrant,
+      'Expressive' => DynamicSchemeVariant.expressive,
+      'Fidelity' => DynamicSchemeVariant.fidelity,
+      'Monochrome' => DynamicSchemeVariant.monochrome,
+      _ => DynamicSchemeVariant.tonalSpot,
+    };
+    final targetColors = useAlbumColors
+        ? ColorScheme.fromSeed(
+            seedColor: _artworkSeed ?? Colors.deepPurple,
+            brightness: Theme.of(context).brightness,
+            dynamicSchemeVariant: variant,
+          )
+        : appColors;
     final swipeToDismiss = controller.boolSetting(
       'behavior_swipe_to_dismiss',
       true,
@@ -147,125 +193,132 @@ class _MiniPlayerState extends State<MiniPlayer>
           offset: Offset(_horizontalOffset.value, 0),
           child: child,
         ),
-        child: Material(
-          color: colors.primaryContainer,
-          elevation: 3,
-          shadowColor: Colors.black.withValues(alpha: .32),
-          shape: useSmoothCorners
-              ? RoundedSuperellipseBorder(borderRadius: miniPlayerBorderRadius)
-              : RoundedRectangleBorder(borderRadius: miniPlayerBorderRadius),
-          clipBehavior: Clip.antiAlias,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: controller.showFullPlayer,
-            onVerticalDragEnd: (details) {
-              if ((details.primaryVelocity ?? 0) < -150) {
-                controller.showFullPlayer();
-              }
-            },
-            onHorizontalDragStart: swipeToDismiss
-                ? _onHorizontalDragStart
-                : null,
-            onHorizontalDragUpdate: swipeToDismiss
-                ? _onHorizontalDragUpdate
-                : null,
-            onHorizontalDragEnd: swipeToDismiss ? _onHorizontalDragEnd : null,
-            child: SizedBox(
-              height: miniPlayerHeight,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 10, right: 12),
-                child: Row(
-                  children: [
-                    Artwork(
-                      colors: song.colors,
-                      size: 44,
-                      borderRadius: 22,
-                      iconSize: 17,
-                      mediaStoreId: song.mediaStoreId,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          AutoScrollingText(
-                            text: song.title,
-                            style: TextStyle(
-                              color: colors.onPrimaryContainer,
-                              fontFamily: 'GoogleSansFlex',
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -.2,
-                              height: 1.15,
-                            ),
-                            gradientEdgeColor: colors.primaryContainer,
-                            canScroll: controller.isPlaying,
-                          ),
-                          const SizedBox(height: 2),
-                          AutoScrollingText(
-                            text: song.artist,
-                            style: TextStyle(
-                              color: colors.onPrimaryContainer.withValues(
-                                alpha: .7,
-                              ),
-                              fontFamily: 'GoogleSansFlex',
-                              fontSize: 13,
-                              letterSpacing: 0,
-                              height: 1.15,
-                            ),
-                            gradientEdgeColor: colors.primaryContainer,
-                            canScroll: controller.isPlaying,
-                          ),
-                        ],
+        child: TweenAnimationBuilder<ColorScheme>(
+          tween: _ColorSchemeTween(end: targetColors),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.fastOutSlowIn,
+          builder: (context, colors, _) => Material(
+            color: colors.primaryContainer,
+            elevation: 3,
+            shadowColor: Colors.black.withValues(alpha: .32),
+            shape: useSmoothCorners
+                ? RoundedSuperellipseBorder(
+                    borderRadius: miniPlayerBorderRadius,
+                  )
+                : RoundedRectangleBorder(borderRadius: miniPlayerBorderRadius),
+            clipBehavior: Clip.antiAlias,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: controller.showFullPlayer,
+              onVerticalDragEnd: (details) {
+                if ((details.primaryVelocity ?? 0) < -150) {
+                  controller.showFullPlayer();
+                }
+              },
+              onHorizontalDragStart: swipeToDismiss
+                  ? _onHorizontalDragStart
+                  : null,
+              onHorizontalDragUpdate: swipeToDismiss
+                  ? _onHorizontalDragUpdate
+                  : null,
+              onHorizontalDragEnd: swipeToDismiss ? _onHorizontalDragEnd : null,
+              child: SizedBox(
+                height: miniPlayerHeight,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 10, right: 12),
+                  child: Row(
+                    children: [
+                      Artwork(
+                        colors: song.colors,
+                        size: 44,
+                        borderRadius: 22,
+                        iconSize: 17,
+                        mediaStoreId: song.mediaStoreId,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    _MiniControl(
-                      background: colors.onPrimary,
-                      foreground: colors.primary,
-                      icon: Icons.skip_previous_rounded,
-                      semanticLabel: 'Anterior',
-                      onPressed: () {
-                        if (controller.boolSetting(
-                          'behavior_haptic_feedback',
-                          true,
-                        )) {
-                          HapticFeedback.selectionClick();
-                        }
-                        controller.skipPrevious();
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _MiniControl(
-                      background: colors.primary,
-                      foreground: colors.onPrimary,
-                      icon: controller.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      semanticLabel: controller.isPlaying
-                          ? 'Pausar'
-                          : 'Reproducir',
-                      onPressed: () {
-                        if (controller.boolSetting(
-                          'behavior_haptic_feedback',
-                          true,
-                        )) {
-                          HapticFeedback.selectionClick();
-                        }
-                        controller.togglePlayPause();
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    _MiniControl(
-                      background: colors.onPrimary,
-                      foreground: colors.primary,
-                      icon: Icons.skip_next_rounded,
-                      semanticLabel: 'Siguiente',
-                      onPressed: controller.skipNext,
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AutoScrollingText(
+                              text: song.title,
+                              style: TextStyle(
+                                color: colors.onPrimaryContainer,
+                                fontFamily: 'GoogleSansFlex',
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -.2,
+                                height: 1.15,
+                              ),
+                              gradientEdgeColor: colors.primaryContainer,
+                              canScroll: controller.isPlaying,
+                            ),
+                            const SizedBox(height: 2),
+                            AutoScrollingText(
+                              text: song.artist,
+                              style: TextStyle(
+                                color: colors.onPrimaryContainer.withValues(
+                                  alpha: .7,
+                                ),
+                                fontFamily: 'GoogleSansFlex',
+                                fontSize: 13,
+                                letterSpacing: 0,
+                                height: 1.15,
+                              ),
+                              gradientEdgeColor: colors.primaryContainer,
+                              canScroll: controller.isPlaying,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _MiniControl(
+                        background: colors.onPrimary,
+                        foreground: colors.primary,
+                        icon: Icons.skip_previous_rounded,
+                        semanticLabel: 'Anterior',
+                        onPressed: () {
+                          if (controller.boolSetting(
+                            'behavior_haptic_feedback',
+                            true,
+                          )) {
+                            HapticFeedback.selectionClick();
+                          }
+                          controller.skipPrevious();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _MiniControl(
+                        background: colors.primary,
+                        foreground: colors.onPrimary,
+                        icon: controller.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        semanticLabel: controller.isPlaying
+                            ? 'Pausar'
+                            : 'Reproducir',
+                        onPressed: () {
+                          if (controller.boolSetting(
+                            'behavior_haptic_feedback',
+                            true,
+                          )) {
+                            HapticFeedback.selectionClick();
+                          }
+                          controller.togglePlayPause();
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      _MiniControl(
+                        background: colors.onPrimary,
+                        foreground: colors.primary,
+                        icon: Icons.skip_next_rounded,
+                        semanticLabel: 'Siguiente',
+                        onPressed: controller.skipNext,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -274,6 +327,13 @@ class _MiniPlayerState extends State<MiniPlayer>
       ),
     );
   }
+}
+
+class _ColorSchemeTween extends Tween<ColorScheme> {
+  _ColorSchemeTween({required ColorScheme end}) : super(end: end);
+
+  @override
+  ColorScheme lerp(double t) => ColorScheme.lerp(begin!, end!, t);
 }
 
 class _MiniControl extends StatelessWidget {
@@ -296,17 +356,29 @@ class _MiniControl extends StatelessWidget {
     return Semantics(
       button: true,
       label: semanticLabel,
-      child: Material(
-        color: background,
-        shape: const CircleBorder(),
-        child: InkResponse(
-          onTap: onPressed,
-          radius: 22,
-          containedInkWell: false,
-          customBorder: const CircleBorder(),
-          child: SizedBox.square(
-            dimension: 44,
-            child: Icon(icon, size: 22, color: foreground),
+      child: SizedBox.square(
+        // Keep an accessible 44 dp hit target while matching the source's
+        // 36 dp visible transport circles.
+        dimension: 44,
+        child: Material(
+          color: Colors.transparent,
+          child: InkResponse(
+            onTap: onPressed,
+            radius: 22,
+            containedInkWell: false,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: background,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 22, color: foreground),
+              ),
+            ),
           ),
         ),
       ),

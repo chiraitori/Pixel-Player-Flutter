@@ -7,6 +7,8 @@ class FullPlayerTopBar extends StatelessWidget {
     required this.onShowQueue,
     this.isCastConnecting = false,
     this.remoteRouteName,
+    this.isBluetoothActive = false,
+    this.bluetoothName,
     super.key,
   });
 
@@ -15,6 +17,8 @@ class FullPlayerTopBar extends StatelessWidget {
   final VoidCallback onShowQueue;
   final bool isCastConnecting;
   final String? remoteRouteName;
+  final bool isBluetoothActive;
+  final String? bluetoothName;
 
   @override
   Widget build(BuildContext context) {
@@ -93,10 +97,14 @@ class FullPlayerTopBar extends StatelessWidget {
                             Icon(
                               remoteRouteName != null || isCastConnecting
                                   ? Icons.cast_rounded
-                                  : Icons.bluetooth_rounded,
+                                  : isBluetoothActive
+                                  ? Icons.bluetooth_rounded
+                                  : Icons.speaker_rounded,
                               size: 24,
                               color: colors.primary,
-                              semanticLabel: 'Audio output',
+                              semanticLabel: bluetoothName == null
+                                  ? 'Audio output'
+                                  : 'Audio output: $bluetoothName',
                             ),
                             if (showCastLabel) ...[
                               const SizedBox(width: 8),

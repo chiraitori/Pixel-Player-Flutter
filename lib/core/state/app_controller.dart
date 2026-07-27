@@ -1815,12 +1815,17 @@ class AppController extends ChangeNotifier {
                   artist: item.artist,
                   album: item.album,
                   duration: item.duration,
-                  artUri: item.albumId == null
-                      ? null
-                      : Uri.parse(
+                  artUri: item.albumId != null
+                      ? Uri.parse(
                           'content://media/external/audio/albumart/'
                           '${item.albumId}',
-                        ),
+                        )
+                      : (item.mediaStoreId != null
+                          ? Uri.parse(
+                              'content://media/external/audio/media/'
+                              '${item.mediaStoreId}/albumart',
+                            )
+                          : null),
                 ),
               ),
             )

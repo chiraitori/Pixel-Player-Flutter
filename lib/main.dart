@@ -11,6 +11,8 @@ Future<void> main() async {
         'com.chiraitori.pixelplay.channel.audio_playback',
     androidNotificationChannelName: 'Audio playback',
     androidNotificationOngoing: true,
+    androidStopForegroundOnPause: true,
+    androidNotificationIcon: 'drawable/audio_service_app_icon',
   );
   await LyricsParser.ensureRomanizationInitialized();
   runApp(const PixelPlayApp());

@@ -75,7 +75,12 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
   void _press(_PlaybackButtonType button) {
     setState(() => _lastClicked = button);
     _releaseTimer?.cancel();
-    _releaseTimer = Timer(const Duration(milliseconds: 180), () {
+    final releaseDelay =
+        button == _PlaybackButtonType.previous ||
+            button == _PlaybackButtonType.next
+        ? const Duration(milliseconds: 600)
+        : const Duration(milliseconds: 220);
+    _releaseTimer = Timer(releaseDelay, () {
       if (!mounted) return;
       setState(() {
         _lastClicked = null;
@@ -88,12 +93,16 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
 
     switch (button) {
       case _PlaybackButtonType.previous:
-        widget.onPrevious();
+        Timer(const Duration(milliseconds: 180), () {
+          if (mounted) widget.onPrevious();
+        });
       case _PlaybackButtonType.playPause:
         if (widget.hapticFeedbackEnabled) HapticFeedback.selectionClick();
         widget.onPlayPause();
       case _PlaybackButtonType.next:
-        widget.onNext();
+        Timer(const Duration(milliseconds: 180), () {
+          if (mounted) widget.onNext();
+        });
     }
   }
 
@@ -121,6 +130,7 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
                 width: available * previousWeight / totalWeight,
                 height: widget.height,
                 radius: widget.height / 2,
+                smoothShape: false,
                 color: widget.colorPrevious,
                 iconColor: widget.tintPrevious,
                 icon: Icons.skip_previous_rounded,
@@ -133,6 +143,7 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
                 width: available * playWeight / totalWeight,
                 height: widget.height,
                 radius: _visualPlaying ? 26 : 60,
+                smoothShape: true,
                 color: widget.colorPlayPause,
                 iconColor: widget.tintPlayPause,
                 icon: _visualPlaying
@@ -147,6 +158,7 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
                 width: available * nextWeight / totalWeight,
                 height: widget.height,
                 radius: widget.height / 2,
+                smoothShape: false,
                 color: widget.colorNext,
                 iconColor: widget.tintNext,
                 icon: Icons.skip_next_rounded,
@@ -167,6 +179,7 @@ class _AnimatedTransportButton extends StatelessWidget {
     required this.width,
     required this.height,
     required this.radius,
+    required this.smoothShape,
     required this.color,
     required this.iconColor,
     required this.icon,
@@ -178,6 +191,7 @@ class _AnimatedTransportButton extends StatelessWidget {
   final double width;
   final double height;
   final double radius;
+  final bool smoothShape;
   final Color color;
   final Color iconColor;
   final IconData icon;
@@ -192,9 +206,13 @@ class _AnimatedTransportButton extends StatelessWidget {
       curve: Curves.easeOutCubic,
       width: width,
       height: height,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(radius),
+        shape: smoothShape
+            ? RoundedSuperellipseBorder(
+                borderRadius: BorderRadius.circular(radius),
+              )
+            : const StadiumBorder(),
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(

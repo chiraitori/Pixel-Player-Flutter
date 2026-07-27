@@ -3,16 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_chrome_cast/entities.dart' show GoogleCastDevice;
-import 'package:on_audio_query/on_audio_query.dart';
 
 import '../../core/models/song.dart';
 import '../../core/services/audio_meta_service.dart';
 import '../../core/services/google_cast_service.dart';
 import '../../core/state/app_controller.dart';
-import '../../core/theme/artwork_color_extractor.dart';
 import '../../core/theme/pixelplay_theme.dart';
+import '../../core/theme/player_palette_cache.dart';
 import '../../shared/widgets/auto_scrolling_text.dart';
 import '../../shared/widgets/song_tile.dart';
+import '../details/album_detail_screen.dart';
+import '../details/artist_detail_screen.dart';
 import 'album_carousel.dart';
 import 'animated_playback_controls.dart';
 import 'bottom_toggle_row.dart';
@@ -28,43 +29,48 @@ class FullPlayer extends StatefulWidget {
 }
 
 class _FullPlayerState extends State<FullPlayer> {
-  static final Map<int, Color> _artworkSeedCache = <int, Color>{};
+  static const _deviceCapabilitiesChannel = MethodChannel(
+    'com.chiraitori.pixelplay/device_capabilities',
+  );
 
   double _verticalDrag = 0;
   String? _paletteSongId;
   Color? _artworkSeed;
+  bool _isBluetoothActive = false;
+  String? _bluetoothName;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadAudioRoute());
+  }
+
+  Future<void> _loadAudioRoute() async {
+    try {
+      final capabilities = await _deviceCapabilitiesChannel
+          .invokeMapMethod<String, dynamic>('getCapabilities');
+      if (!mounted || capabilities == null) return;
+      setState(() {
+        _isBluetoothActive = capabilities['bluetoothActive'] == true;
+        _bluetoothName = capabilities['bluetoothName']?.toString();
+      });
+    } on MissingPluginException {
+      // Widget tests and non-Android platforms keep the local-speaker state.
+    } on PlatformException {
+      // Keep the local-speaker state if Android cannot inspect the route.
+    }
+  }
 
   void _syncArtworkSeed(Song song) {
     if (_paletteSongId == song.id) return;
     _paletteSongId = song.id;
 
-    final mediaStoreId = song.mediaStoreId;
-    _artworkSeed = mediaStoreId == null
-        ? song.colors.first
-        : _artworkSeedCache[mediaStoreId] ?? song.colors.first;
-    if (mediaStoreId == null || _artworkSeedCache.containsKey(mediaStoreId)) {
-      return;
-    }
-
+    _artworkSeed = song.colors.isEmpty ? Colors.deepPurple : song.colors.first;
     final requestedSongId = song.id;
     unawaited(() async {
-      try {
-        final artwork = await OnAudioQuery().queryArtwork(
-          mediaStoreId,
-          ArtworkType.AUDIO,
-          format: ArtworkFormat.JPEG,
-          size: 256,
-          quality: 90,
-        );
-        if (artwork == null || artwork.isEmpty) return;
-        final seed = await extractPixelPlayerArtworkSeed(artwork);
-        if (seed == null) return;
-        _artworkSeedCache[mediaStoreId] = seed;
-        if (!mounted || _paletteSongId != requestedSongId) return;
-        setState(() => _artworkSeed = seed);
-      } catch (_) {
-        // Keep the deterministic fallback when artwork cannot be decoded.
-      }
+      final seed = await PlayerPaletteCache.seedFor(song);
+      if (!mounted || _paletteSongId != requestedSongId) return;
+      setState(() => _artworkSeed = seed);
     }());
   }
 
@@ -76,10 +82,14 @@ class _FullPlayerState extends State<FullPlayer> {
     _syncArtworkSeed(song);
 
     final brightness = Theme.of(context).brightness;
-    final useAlbumColors = controller.boolSetting(
-      'appearance_use_album_colors',
-      true,
-    );
+    final useAlbumColors =
+        controller.stringSetting(
+          'appearance_player_palette',
+          controller.boolSetting('appearance_use_album_colors', true)
+              ? 'Album Art'
+              : 'System Dynamic',
+        ) ==
+        'Album Art';
     final variant = switch (controller.stringSetting(
       'appearance_palette_style',
       'Tonal spot',
@@ -98,20 +108,23 @@ class _FullPlayerState extends State<FullPlayer> {
             dynamicSchemeVariant: variant,
           )
         : Theme.of(context).colorScheme;
-    final lightSystemIcons = brightness == Brightness.dark;
+    final playerBackground = playerColors.primaryContainer;
+    final lightSystemIcons =
+        ThemeData.estimateBrightnessForColor(playerBackground) ==
+        Brightness.dark;
     final systemStyle = SystemUiOverlayStyle(
-      statusBarColor: playerColors.surface,
+      statusBarColor: playerBackground,
       statusBarIconBrightness: lightSystemIcons
           ? Brightness.light
           : Brightness.dark,
       statusBarBrightness: lightSystemIcons
           ? Brightness.dark
           : Brightness.light,
-      systemNavigationBarColor: playerColors.surface,
+      systemNavigationBarColor: playerBackground,
       systemNavigationBarIconBrightness: lightSystemIcons
           ? Brightness.light
           : Brightness.dark,
-      systemNavigationBarDividerColor: playerColors.surface,
+      systemNavigationBarDividerColor: playerBackground,
     );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -119,7 +132,7 @@ class _FullPlayerState extends State<FullPlayer> {
       child: Theme(
         data: PixelPlayTheme.fromColorScheme(playerColors),
         child: Material(
-          color: playerColors.surface,
+          color: playerBackground,
           child: SafeArea(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
@@ -153,6 +166,8 @@ class _FullPlayerState extends State<FullPlayer> {
                       onShowQueue: () => _showQueue(context),
                       isCastConnecting: GoogleCastService.instance.connecting,
                       remoteRouteName: GoogleCastService.instance.routeName,
+                      isBluetoothActive: _isBluetoothActive,
+                      bluetoothName: _bluetoothName,
                     ),
                   ),
                   Expanded(
@@ -167,12 +182,20 @@ class _FullPlayerState extends State<FullPlayer> {
                                   song: song,
                                   onLyrics: () => _showLyrics(context, song),
                                   onQueue: () => _showQueue(context),
+                                  onAlbum: (albumSong) =>
+                                      _openAlbum(context, albumSong),
+                                  onArtist: (artistSong) =>
+                                      _openArtist(context, artistSong),
                                 )
                               : _PortraitPlayerContent(
                                   key: const ValueKey('portrait-player'),
                                   song: song,
                                   onLyrics: () => _showLyrics(context, song),
                                   onQueue: () => _showQueue(context),
+                                  onAlbum: (albumSong) =>
+                                      _openAlbum(context, albumSong),
+                                  onArtist: (artistSong) =>
+                                      _openArtist(context, artistSong),
                                 ),
                         );
                       },
@@ -393,8 +416,32 @@ class _FullPlayerState extends State<FullPlayer> {
     showLyricsFlow(context, song);
   }
 
+  void _openAlbum(BuildContext context, Song song) {
+    final controller = AppScope.of(context);
+    controller.hideFullPlayer();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            AlbumDetailScreen(albumId: song.albumId?.toString() ?? song.album),
+      ),
+    );
+  }
+
+  void _openArtist(BuildContext context, Song song) {
+    final controller = AppScope.of(context);
+    controller.hideFullPlayer();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ArtistDetailScreen(
+          artistId: song.artistId?.toString() ?? song.artist,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showOutput(BuildContext context, Song song) async {
     final cast = GoogleCastService.instance;
+    await _loadAudioRoute();
     await cast.startDiscovery();
     if (!context.mounted) return;
     await showModalBottomSheet<void>(
@@ -421,9 +468,9 @@ class _FullPlayerState extends State<FullPlayer> {
                   title: const Text('This device'),
                   subtitle: const Text('Built-in speaker'),
                   trailing: Icon(
-                    cast.connected
-                        ? Icons.radio_button_unchecked_rounded
-                        : Icons.check_circle_rounded,
+                    !cast.connected && !_isBluetoothActive
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
                   ),
                   onTap: cast.connected
                       ? () async {
@@ -443,9 +490,17 @@ class _FullPlayerState extends State<FullPlayer> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.bluetooth_audio_rounded),
-                  title: const Text('Bluetooth device'),
-                  subtitle: const Text('Choose a paired audio device'),
-                  trailing: const Icon(Icons.open_in_new_rounded),
+                  title: Text(_bluetoothName ?? 'Bluetooth device'),
+                  subtitle: Text(
+                    _isBluetoothActive
+                        ? 'Connected audio output'
+                        : 'Choose a paired audio device',
+                  ),
+                  trailing: Icon(
+                    _isBluetoothActive && !cast.connected
+                        ? Icons.check_circle_rounded
+                        : Icons.open_in_new_rounded,
+                  ),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     const MethodChannel(
@@ -507,17 +562,28 @@ class _FullPlayerState extends State<FullPlayer> {
   }
 }
 
+double _carouselFraction(AppController controller) {
+  return switch (controller.stringSetting('carousel_style', 'No Peek')) {
+    'One Peek' => .8,
+    _ => 1,
+  };
+}
+
 class _PortraitPlayerContent extends StatelessWidget {
   const _PortraitPlayerContent({
     required this.song,
     required this.onLyrics,
     required this.onQueue,
+    required this.onAlbum,
+    required this.onArtist,
     super.key,
   });
 
   final Song song;
   final VoidCallback onLyrics;
   final VoidCallback onQueue;
+  final ValueChanged<Song> onAlbum;
+  final ValueChanged<Song> onArtist;
 
   @override
   Widget build(BuildContext context) {
@@ -525,23 +591,29 @@ class _PortraitPlayerContent extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final contentWidth = (constraints.maxWidth - 48).clamp(0.0, 600.0);
+        final carouselFraction = _carouselFraction(controller);
         final heightForArtwork = constraints.hasBoundedHeight
             ? (constraints.maxHeight - 352).clamp(120.0, contentWidth)
             : contentWidth;
-        final artworkSize = heightForArtwork.clamp(120.0, contentWidth);
+        final carouselWidth = (heightForArtwork / carouselFraction).clamp(
+          120.0,
+          contentWidth,
+        );
+        final carouselHeight = carouselWidth * carouselFraction;
         return Padding(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               SizedBox(
-                width: artworkSize,
-                height: artworkSize,
+                width: carouselWidth,
+                height: carouselHeight,
                 child: AlbumCarousel(
                   currentSong: song,
                   queue: controller.queue,
                   isPlaying: controller.isPlaying,
-                  viewportFraction: 1,
+                  viewportFraction: carouselFraction,
+                  onArtworkTap: onAlbum,
                   onSongSelected: (selected) => controller.playSong(
                     selected,
                     fromQueue: controller.queue,
@@ -555,6 +627,7 @@ class _PortraitPlayerContent extends StatelessWidget {
                     song: song,
                     onLyrics: onLyrics,
                     onQueue: onQueue,
+                    onArtist: () => onArtist(song),
                   ),
                   const SizedBox(height: 4),
                   _PlayerProgress(song: song),
@@ -574,16 +647,21 @@ class _LandscapePlayerContent extends StatelessWidget {
     required this.song,
     required this.onLyrics,
     required this.onQueue,
+    required this.onAlbum,
+    required this.onArtist,
     super.key,
   });
 
   final Song song;
   final VoidCallback onLyrics;
   final VoidCallback onQueue;
+  final ValueChanged<Song> onAlbum;
+  final ValueChanged<Song> onArtist;
 
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
+    final carouselFraction = _carouselFraction(controller);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
@@ -596,7 +674,8 @@ class _LandscapePlayerContent extends StatelessWidget {
                 currentSong: song,
                 queue: controller.queue,
                 isPlaying: controller.isPlaying,
-                viewportFraction: 1,
+                viewportFraction: carouselFraction,
+                onArtworkTap: onAlbum,
                 onSongSelected: (selected) =>
                     controller.playSong(selected, fromQueue: controller.queue),
               ),
@@ -612,6 +691,7 @@ class _LandscapePlayerContent extends StatelessWidget {
                   song: song,
                   onLyrics: onLyrics,
                   onQueue: onQueue,
+                  onArtist: () => onArtist(song),
                   showQueue: true,
                 ),
                 _PlayerProgress(song: song),
@@ -630,12 +710,14 @@ class _SongMetadata extends StatelessWidget {
     required this.song,
     required this.onLyrics,
     required this.onQueue,
+    required this.onArtist,
     this.showQueue = false,
   });
 
   final Song song;
   final VoidCallback onLyrics;
   final VoidCallback onQueue;
+  final VoidCallback onArtist;
   final bool showQueue;
 
   @override
@@ -659,22 +741,27 @@ class _SongMetadata extends StatelessWidget {
                   AutoScrollingText(
                     text: song.title,
                     style: Theme.of(context).textTheme.headlineSmall!.copyWith(
-                      color: colors.onSurface,
+                      color: colors.onPrimaryContainer,
                       fontFamily: 'GoogleSansFlex',
                       fontWeight: FontWeight.bold,
                     ),
-                    gradientEdgeColor: colors.surface,
+                    gradientEdgeColor: colors.primaryContainer,
                     canScroll: controller.isPlaying,
                   ),
                   const SizedBox(height: 2),
-                  AutoScrollingText(
-                    text: song.artist,
-                    style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                      color: colors.onSurfaceVariant,
-                      letterSpacing: 0,
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onArtist,
+                    onLongPress: onArtist,
+                    child: AutoScrollingText(
+                      text: song.artist,
+                      style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                        color: colors.onPrimaryContainer.withValues(alpha: .7),
+                        letterSpacing: 0,
+                      ),
+                      gradientEdgeColor: colors.primaryContainer,
+                      canScroll: controller.isPlaying,
                     ),
-                    gradientEdgeColor: colors.surface,
-                    canScroll: controller.isPlaying,
                   ),
                 ],
               ),
@@ -812,9 +899,11 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                       controller.seek(newValue);
                       setState(() => _dragValue = null);
                     },
-                    activeColor: colors.primary,
-                    inactiveColor: colors.primary.withValues(alpha: .25),
-                    thumbColor: colors.primary,
+                    activeColor: colors.onPrimaryContainer,
+                    inactiveColor: colors.onPrimaryContainer.withValues(
+                      alpha: .2,
+                    ),
+                    thumbColor: colors.onPrimaryContainer,
                     isPlaying: controller.isPlaying,
                     strokeWidth: 4.5,
                     thumbRadius: 7.5,
@@ -837,7 +926,7 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                             ),
                           ),
                           style: TextStyle(
-                            color: colors.onSurfaceVariant,
+                            color: colors.onPrimaryContainer,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -845,7 +934,7 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                         Text(
                           _duration(widget.song.duration),
                           style: TextStyle(
-                            color: colors.onSurfaceVariant,
+                            color: colors.onPrimaryContainer,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -860,7 +949,9 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: colors.onSurface.withValues(alpha: .12),
+                          color: colors.onPrimaryContainer.withValues(
+                            alpha: .14,
+                          ),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
@@ -868,7 +959,9 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: colors.onSurfaceVariant,
+                            color: colors.onPrimaryContainer.withValues(
+                              alpha: .96,
+                            ),
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                           ),
@@ -947,12 +1040,12 @@ class _PlayerControlsBlock extends StatelessWidget {
               onPrevious: controller.skipPrevious,
               onPlayPause: controller.togglePlayPause,
               onNext: controller.skipNext,
-              colorPrevious: colors.secondaryFixedDim,
+              colorPrevious: colors.primary,
               colorPlayPause: colors.tertiaryFixedDim,
-              colorNext: colors.secondaryFixedDim,
-              tintPrevious: colors.onSecondaryFixed,
+              colorNext: colors.primary,
+              tintPrevious: colors.onPrimary,
               tintPlayPause: colors.onTertiaryFixed,
-              tintNext: colors.onSecondaryFixed,
+              tintNext: colors.onPrimary,
             ),
           ),
 

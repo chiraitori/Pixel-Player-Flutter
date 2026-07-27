@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
 import android.media.MediaCodecList
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -119,6 +120,19 @@ class MainActivity : AudioServiceActivity() {
 
     private fun readCapabilities(): Map<String, Any?> {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val bluetoothOutput = audioManager
+            .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .firstOrNull { device ->
+                device.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                        device.type == AudioDeviceInfo.TYPE_HEARING_AID) ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                        (
+                            device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                                device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+                            ))
+            }
         val packageManager = packageManager
         val decoderTypes = MediaCodecList(MediaCodecList.ALL_CODECS)
             .codecInfos
@@ -140,6 +154,8 @@ class MainActivity : AudioServiceActivity() {
             "abis" to Build.SUPPORTED_ABIS.toList(),
             "outputSampleRate" to audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE),
             "framesPerBuffer" to audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER),
+            "bluetoothActive" to (bluetoothOutput != null),
+            "bluetoothName" to bluetoothOutput?.productName?.toString(),
             "decoderTypes" to decoderTypes.toList().sorted(),
             "dynamicColor" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S),
             "notificationsEnabled" to notificationManager.areNotificationsEnabled(),

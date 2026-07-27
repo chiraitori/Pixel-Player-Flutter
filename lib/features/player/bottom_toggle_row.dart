@@ -27,9 +27,11 @@ class BottomToggleRow extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(26, 0, 26, 6),
       padding: const EdgeInsets.all(6),
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: colors.surfaceContainerLowest.withValues(alpha: .7),
-        borderRadius: BorderRadius.circular(60),
+        shape: const RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(Radius.circular(60)),
+        ),
       ),
       child: Row(
         children: [
@@ -109,7 +111,7 @@ class _ToggleSegment extends StatelessWidget {
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: active ? activeColor : inactiveColor,
-        borderRadius: BorderRadius.circular(active ? 60 : 20),
+        borderRadius: BorderRadius.circular(active ? 60 : 8),
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(

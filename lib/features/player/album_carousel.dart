@@ -10,6 +10,7 @@ class AlbumCarousel extends StatefulWidget {
     required this.queue,
     required this.isPlaying,
     required this.onSongSelected,
+    this.onArtworkTap,
     this.viewportFraction = .8,
     super.key,
   });
@@ -18,6 +19,7 @@ class AlbumCarousel extends StatefulWidget {
   final List<Song> queue;
   final bool isPlaying;
   final ValueChanged<Song> onSongSelected;
+  final ValueChanged<Song>? onArtworkTap;
   final double viewportFraction;
 
   @override
@@ -126,19 +128,25 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
               final song = widget.queue[index];
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: AspectRatio(
-                  aspectRatio: 1,
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final artworkSize = constraints.biggest.shortestSide;
-                      return Artwork(
-                        colors: song.colors,
-                        size: artworkSize,
-                        borderRadius: 18,
-                        iconSize: 82,
-                        mediaStoreId: song.mediaStoreId,
-                      );
-                    },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: index == _currentIndex && widget.onArtworkTap != null
+                      ? () => widget.onArtworkTap!(song)
+                      : null,
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final artworkSize = constraints.biggest.shortestSide;
+                        return Artwork(
+                          colors: song.colors,
+                          size: artworkSize,
+                          borderRadius: 18,
+                          iconSize: 82,
+                          mediaStoreId: song.mediaStoreId,
+                        );
+                      },
+                    ),
                   ),
                 ),
               );

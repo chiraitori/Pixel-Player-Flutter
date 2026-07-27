@@ -935,7 +935,7 @@ class _SettingsDetailScreenState extends State<SettingsDetailScreen> {
       _SettingSection('Now Playing', [
         _SettingItem.action(
           'Player Theme',
-          'System Dynamic',
+          'Album Art',
           Icons.play_circle_outline_rounded,
           settingId: 'appearance_player_palette',
           choices: ['Album Art', 'System Dynamic'],
