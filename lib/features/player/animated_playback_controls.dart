@@ -73,13 +73,16 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
   }
 
   void _press(_PlaybackButtonType button) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     setState(() => _lastClicked = button);
     _releaseTimer?.cancel();
     final releaseDelay =
-        button == _PlaybackButtonType.previous ||
-            button == _PlaybackButtonType.next
-        ? const Duration(milliseconds: 600)
-        : const Duration(milliseconds: 220);
+        reduceMotion
+            ? Duration.zero
+            : button == _PlaybackButtonType.previous ||
+                  button == _PlaybackButtonType.next
+            ? const Duration(milliseconds: 600)
+            : const Duration(milliseconds: 220);
     _releaseTimer = Timer(releaseDelay, () {
       if (!mounted) return;
       setState(() {
@@ -93,14 +96,14 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
 
     switch (button) {
       case _PlaybackButtonType.previous:
-        Timer(const Duration(milliseconds: 180), () {
+        Timer(reduceMotion ? Duration.zero : const Duration(milliseconds: 180), () {
           if (mounted) widget.onPrevious();
         });
       case _PlaybackButtonType.playPause:
         if (widget.hapticFeedbackEnabled) HapticFeedback.selectionClick();
         widget.onPlayPause();
       case _PlaybackButtonType.next:
-        Timer(const Duration(milliseconds: 180), () {
+        Timer(reduceMotion ? Duration.zero : const Duration(milliseconds: 180), () {
           if (mounted) widget.onNext();
         });
     }
@@ -108,11 +111,12 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
 
   double _weight(_PlaybackButtonType button) {
     if (_lastClicked == null) return 1.0;
-    return _lastClicked == button ? 1.25 : 0.85;
+    return _lastClicked == button ? 1.1 : .65;
   }
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 6.0;
@@ -136,6 +140,7 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
                 icon: Icons.skip_previous_rounded,
                 iconSize: 32,
                 label: 'Anterior',
+                reduceMotion: reduceMotion,
                 onTap: () => _press(_PlaybackButtonType.previous),
               ),
               const SizedBox(width: gap),
@@ -151,6 +156,7 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
                     : Icons.play_arrow_rounded,
                 iconSize: 36,
                 label: _visualPlaying ? 'Pausar' : 'Reproducir',
+                reduceMotion: reduceMotion,
                 onTap: () => _press(_PlaybackButtonType.playPause),
               ),
               const SizedBox(width: gap),
@@ -164,6 +170,7 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
                 icon: Icons.skip_next_rounded,
                 iconSize: 32,
                 label: 'Siguiente',
+                reduceMotion: reduceMotion,
                 onTap: () => _press(_PlaybackButtonType.next),
               ),
             ],
@@ -185,6 +192,7 @@ class _AnimatedTransportButton extends StatelessWidget {
     required this.icon,
     required this.iconSize,
     required this.label,
+    required this.reduceMotion,
     required this.onTap,
   });
 
@@ -197,12 +205,13 @@ class _AnimatedTransportButton extends StatelessWidget {
   final IconData icon;
   final double iconSize;
   final String label;
+  final bool reduceMotion;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
       width: width,
       height: height,
@@ -223,7 +232,9 @@ class _AnimatedTransportButton extends StatelessWidget {
           onTap: onTap,
           child: Center(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
               child: Icon(
                 icon,
                 key: ValueKey(icon),

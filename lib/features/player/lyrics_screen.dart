@@ -21,46 +21,52 @@ import 'wavy_slider.dart';
 
 Future<void> showLyricsFlow(BuildContext context, Song song) async {
   final controller = AppScope.of(context);
+  final colorScheme = Theme.of(context).colorScheme;
   final preference = LyricsSourcePreference.fromSetting(
     controller.stringSetting(
       'library_lyrics_source_priority',
       'Embedded first',
     ),
   );
-  final colorScheme = Theme.of(context).colorScheme;
+  
   final localLyrics = await LyricsService.instance.lyricsFor(
     song,
     preference: preference,
     includeRemote: false,
   );
+  
   if (!context.mounted) return;
-  if (localLyrics != null) {
-    await _openLyricsScreen(context, song, localLyrics, colorScheme);
-    return;
-  }
+  
+  final lyricsToUse = localLyrics ??
+      const LyricsDocument(
+        plain: <String>[],
+        raw: '',
+      );
 
-  final picked = await showDialog<LyricsDocument>(
-    context: context,
-    barrierColor: Colors.black.withValues(alpha: .32),
-    builder: (context) =>
-        _LyricsPickupDialog(song: song, preference: preference),
-  );
-  if (picked == null || !context.mounted) return;
-  await _openLyricsScreen(context, song, picked, colorScheme);
-}
-
-Future<void> _openLyricsScreen(
-  BuildContext context,
-  Song song,
-  LyricsDocument lyrics,
-  ColorScheme colorScheme,
-) {
-  return Navigator.of(context).push<void>(
-    MaterialPageRoute(
-      builder: (context) => Theme(
+  await Navigator.of(context).push<void>(
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) => Theme(
         data: Theme.of(context).copyWith(colorScheme: colorScheme),
-        child: LyricsScreen(song: song, initialLyrics: lyrics),
+        child: LyricsScreen(song: song, initialLyrics: lyricsToUse),
       ),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.15),
+            end: Offset.zero,
+          ).animate(
+            CurvedAnimation(
+              parent: animation,
+              curve: Curves.fastOutSlowIn,
+            ),
+          ),
+          child: FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+        );
+      },
+      transitionDuration: const Duration(milliseconds: 220),
     ),
   );
 }
@@ -92,11 +98,43 @@ class _LyricsScreenState extends State<LyricsScreen> {
   int _lastActiveLine = -1;
   bool _controlsVisible = true;
   Timer? _immersiveTimer;
+  bool _searchingRemote = false;
 
   @override
   void initState() {
     super.initState();
     _showSynced = _lyrics.hasSynced;
+    if (!_lyrics.hasSynced && _lyrics.plain.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoFetchLyrics());
+    }
+  }
+
+  Future<void> _autoFetchLyrics() async {
+    if (_searchingRemote || !mounted) return;
+    setState(() => _searchingRemote = true);
+    try {
+      final preference = LyricsSourcePreference.fromSetting(
+        AppScope.of(context).stringSetting(
+          'library_lyrics_source_priority',
+          'Embedded first',
+        ),
+      );
+      final fetched = await LyricsService.instance.lyricsFor(
+        widget.song,
+        preference: preference,
+        includeRemote: true,
+      );
+      if (fetched != null && mounted) {
+        setState(() {
+          _lyrics = fetched;
+          _showSynced = _lyrics.hasSynced;
+        });
+      }
+    } catch (_) {
+      // Ignore background auto-fetch errors
+    } finally {
+      if (mounted) setState(() => _searchingRemote = false);
+    }
   }
 
   @override

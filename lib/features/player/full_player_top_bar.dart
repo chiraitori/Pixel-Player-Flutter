@@ -28,6 +28,7 @@ class FullPlayerTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final buttonBackground = colors.onPrimary.withValues(alpha: .7);
     final showCastLabel = isCastConnecting || remoteRouteName != null;
 
@@ -88,7 +89,9 @@ class FullPlayerTopBar extends StatelessWidget {
             child: Row(
               children: [
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 180),
                   curve: Curves.easeOutBack,
                   height: 42,
                   constraints: BoxConstraints(

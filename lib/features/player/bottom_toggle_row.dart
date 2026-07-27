@@ -20,6 +20,7 @@ class BottomToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final colors = Theme.of(context).colorScheme;
     final containerBg = colors.surfaceContainer;
     final inactiveBg = colors.surfaceContainerHighest;
@@ -45,8 +46,9 @@ class BottomToggleRow extends StatelessWidget {
                   activeContentColor: colors.onPrimary,
                   inactiveColor: inactiveBg,
                   inactiveContentColor: inactiveIconColor,
-                  icon: Icons.shuffle_rounded,
-                  label: 'Shuffle',
+              icon: Icons.shuffle_rounded,
+              label: 'Shuffle',
+              reduceMotion: reduceMotion,
                   onTap: onShuffle,
                 ),
               ),
@@ -58,10 +60,11 @@ class BottomToggleRow extends StatelessWidget {
                   activeContentColor: colors.onSecondary,
                   inactiveColor: inactiveBg,
                   inactiveContentColor: inactiveIconColor,
-                  icon: repeatMode == 1
-                      ? Icons.repeat_one_rounded
-                      : Icons.repeat_rounded,
-                  label: 'Repeat',
+              icon: repeatMode == 1
+                  ? Icons.repeat_one_rounded
+                  : Icons.repeat_rounded,
+              label: 'Repeat',
+              reduceMotion: reduceMotion,
                   onTap: onRepeat,
                 ),
               ),
@@ -73,10 +76,11 @@ class BottomToggleRow extends StatelessWidget {
                   activeContentColor: colors.onTertiary,
                   inactiveColor: inactiveBg,
                   inactiveContentColor: inactiveIconColor,
-                  icon: favorite
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  label: 'Favorite',
+              icon: favorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              label: 'Favorite',
+              reduceMotion: reduceMotion,
                   onTap: onFavorite,
                 ),
               ),
@@ -97,6 +101,7 @@ class _ToggleSegment extends StatelessWidget {
     required this.inactiveContentColor,
     required this.icon,
     required this.label,
+    required this.reduceMotion,
     required this.onTap,
   });
 
@@ -107,12 +112,13 @@ class _ToggleSegment extends StatelessWidget {
   final Color inactiveContentColor;
   final IconData icon;
   final String label;
+  final bool reduceMotion;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 250),
       curve: Curves.fastOutSlowIn,
       decoration: BoxDecoration(
         color: active ? activeColor : inactiveColor,
@@ -125,7 +131,9 @@ class _ToggleSegment extends StatelessWidget {
           onTap: onTap,
           child: Center(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 200),
               child: Icon(
                 icon,
                 key: ValueKey(icon.hashCode ^ active.hashCode),

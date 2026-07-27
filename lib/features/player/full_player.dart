@@ -1029,13 +1029,16 @@ class _PlayerControlsBlock extends StatelessWidget {
           const SizedBox(height: 14),
           SizedBox(
             height: 72,
-            child: BottomToggleRow(
-              shuffleEnabled: controller.shuffleEnabled,
-              repeatMode: controller.repeatMode,
-              favorite: controller.isFavorite(song),
-              onShuffle: controller.toggleShuffle,
-              onRepeat: controller.cycleRepeatMode,
-              onFavorite: controller.toggleFavorite,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(26, 0, 26, 6),
+              child: BottomToggleRow(
+                shuffleEnabled: controller.shuffleEnabled,
+                repeatMode: controller.repeatMode,
+                favorite: controller.isFavorite(song),
+                onShuffle: controller.toggleShuffle,
+                onRepeat: controller.cycleRepeatMode,
+                onFavorite: controller.toggleFavorite,
+              ),
             ),
           ),
         ],
