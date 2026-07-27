@@ -7,8 +7,23 @@ import '../../shared/widgets/artwork.dart';
 import '../../shared/widgets/playlist_cover.dart';
 import '../../shared/widgets/playlist_multi_selection_sheet.dart';
 import '../../shared/widgets/song_tile.dart';
+import '../player/mini_player.dart';
+import '../shell/player_internal_navigation_bar.dart';
 import 'widgets/library_empty_state.dart';
 import 'widgets/tab_animation.dart';
+
+double _libraryContentBottomPadding(BuildContext context) {
+  final controller = AppScope.of(context);
+  final systemInset = sanitizeNavigationBarBottomInset(
+    MediaQuery.viewPaddingOf(context).bottom,
+  );
+  return resolveNavBarOccupiedHeight(
+        systemInset: systemInset,
+        compactMode: controller.navBarCompactMode,
+      ) +
+      miniPlayerHeight +
+      30;
+}
 
 enum LibrarySection {
   songs('Songs', Icons.music_note_rounded),
@@ -1172,7 +1187,12 @@ class _SongsTab extends StatelessWidget {
     return ListView.separated(
       key: const PageStorageKey('library-songs'),
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 224),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        8,
+        12,
+        _libraryContentBottomPadding(context),
+      ),
       itemCount: songs.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
@@ -1221,7 +1241,12 @@ class _AlbumsTab extends StatelessWidget {
     }
     if (!grid) {
       return ListView.separated(
-        padding: const EdgeInsets.fromLTRB(14, 4, 14, 224),
+        padding: EdgeInsets.fromLTRB(
+          14,
+          4,
+          14,
+          _libraryContentBottomPadding(context) + 4,
+        ),
         itemCount: albums.length,
         separatorBuilder: (context, index) => const SizedBox(height: 8),
         itemBuilder: (context, index) {
@@ -1254,7 +1279,12 @@ class _AlbumsTab extends StatelessWidget {
       );
     }
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(14, 4, 14, 224),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        4,
+        14,
+        _libraryContentBottomPadding(context) + 4,
+      ),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         childAspectRatio: .78,
@@ -1341,7 +1371,12 @@ class _ArtistsTab extends StatelessWidget {
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 224),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        4,
+        12,
+        _libraryContentBottomPadding(context),
+      ),
       itemCount: artists.length,
       separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
@@ -1439,7 +1474,12 @@ class _PlaylistsTab extends StatelessWidget {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 224),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        _libraryContentBottomPadding(context),
+      ),
       itemCount: playlists.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
@@ -1510,7 +1550,12 @@ class _FoldersTab extends StatelessWidget {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 224),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        _libraryContentBottomPadding(context),
+      ),
       itemCount: folders.length,
       itemBuilder: (context, index) {
         final folder = folders[index];

@@ -385,28 +385,37 @@ class AppController extends ChangeNotifier {
       // Tests and unsupported hosts can run without a preferences backend.
     }
 
+    initialized = true;
+    notifyListeners();
+
     if (platformServicesEnabled) {
-      await _configureAudioSession();
+      unawaited(_configureAudioSession());
       if (boolSetting('account_google_drive_connected', false)) {
-        await GoogleDriveAuthService.instance.restore(
-          serverClientId: stringSetting('google_drive_web_client_id', ''),
+        unawaited(
+          GoogleDriveAuthService.instance.restore(
+            serverClientId: stringSetting('google_drive_web_client_id', ''),
+          ),
         );
       }
     }
-    await refreshLibrary(notify: false);
-    _restorePlaylists(storedPlaylists);
-    if (boolSetting('behavior_resume_playback', true) &&
-        storedCurrentSong != null) {
-      final byId = {for (final song in songs) song.id: song};
-      queue = storedQueue
-          .map((id) => byId[id])
-          .whereType<Song>()
-          .toList(growable: false);
-      currentSong = byId[storedCurrentSong];
-      position = Duration(milliseconds: storedPositionMs);
-    }
-    initialized = true;
-    notifyListeners();
+
+    // Scan media library in background so the app opens instantly without startup delay
+    unawaited(
+      refreshLibrary(notify: true).then((_) {
+        _restorePlaylists(storedPlaylists);
+        if (boolSetting('behavior_resume_playback', true) &&
+            storedCurrentSong != null) {
+          final byId = {for (final song in songs) song.id: song};
+          queue = storedQueue
+              .map((id) => byId[id])
+              .whereType<Song>()
+              .toList(growable: false);
+          currentSong = byId[storedCurrentSong];
+          position = Duration(milliseconds: storedPositionMs);
+        }
+        notifyListeners();
+      }),
+    );
   }
 
   Future<void> _configureAudioSession() async {
