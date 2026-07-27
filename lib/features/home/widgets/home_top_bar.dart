@@ -62,7 +62,7 @@ class HomeTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           _TopBarAction(
-            icon: Icons.newspaper_rounded,
+            icon: Icons.receipt_long_rounded,
             tooltip: "What's new",
             onPressed: onOpenChangelog,
           ),
