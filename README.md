@@ -1,6 +1,6 @@
 # PixelPlayer (Flutter)
 
-A modern, expressive, feature-rich Android & cross-platform music player written in Flutter & Dart. Ported with precision from the original Android Compose application to deliver smooth animations, dynamic Material 3 aesthetics, and seamless local & cloud playback.
+A modern, expressive, feature-rich Android & cross-platform music player written in Flutter & Dart. Ported with precision from the original Android Jetpack Compose application ([PixelPlayer](https://github.com/PixelPlayerHQ/PixelPlayer)) to deliver smooth animations, dynamic Material 3 aesthetics, and seamless local & cloud playback.
 
 ---
 
@@ -51,6 +51,13 @@ A modern, expressive, feature-rich Android & cross-platform music player written
 - **Audio Engine**: `just_audio`, `audio_service`, `just_audio_background`
 - **Metadata & Audio Query**: `on_audio_query_android`, `flutter_taglib`, `id3`
 - **UI & Animation**: Material 3, `dynamic_color`, Google Sans Flex font
+
+---
+
+## 💡 Acknowledgements & Credits
+
+This Flutter port is directly based on and inspired by the original Android Compose application:
+- **Original Android App**: [PixelPlayerHQ/PixelPlayer](https://github.com/PixelPlayerHQ/PixelPlayer) by [Theveloper](https://github.com/PixelPlayerHQ).
 
 ---
 
