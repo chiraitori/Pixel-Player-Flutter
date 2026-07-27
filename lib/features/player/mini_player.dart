@@ -18,9 +18,9 @@ const double miniPlayerBottomSpacer = 8;
 enum _DismissDragPhase { idle, tension, freeDrag }
 
 class MiniPlayer extends StatefulWidget {
-  const MiniPlayer({super.key, this.isStandalone = false});
+  const MiniPlayer({super.key, this.isNavBarHidden});
 
-  final bool isStandalone;
+  final bool? isNavBarHidden;
 
   @override
   State<MiniPlayer> createState() => _MiniPlayerState();
@@ -175,7 +175,20 @@ class _MiniPlayerState extends State<MiniPlayer>
         : systemInset > 30
         ? 14.0
         : systemInset;
-    final miniPlayerBorderRadius = BorderRadius.circular(32.0);
+    final isNavBarHidden =
+        widget.isNavBarHidden ?? (ModalRoute.of(context)?.canPop ?? false);
+    final topRadius = controller.navBarStyle == PixelNavBarStyle.fullWidth
+        ? 32.0
+        : controller.navBarCornerRadius;
+    final bottomRadius = isNavBarHidden
+        ? (controller.navBarStyle == PixelNavBarStyle.fullWidth
+            ? 32.0
+            : controller.navBarCornerRadius)
+        : (controller.navBarStyle == PixelNavBarStyle.fullWidth ? 32.0 : 10.0);
+    final miniPlayerBorderRadius = BorderRadius.vertical(
+      top: Radius.circular(topRadius),
+      bottom: Radius.circular(bottomRadius),
+    );
     final useSmoothCorners = controller.boolSetting(
       'appearance_smooth_corners',
       true,
