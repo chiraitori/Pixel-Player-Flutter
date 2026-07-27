@@ -209,9 +209,11 @@ class _AnimatedTransportButton extends StatelessWidget {
       decoration: ShapeDecoration(
         color: color,
         shape: smoothShape
-            ? RoundedSuperellipseBorder(
-                borderRadius: BorderRadius.circular(radius),
-              )
+            ? (radius >= 50
+                ? const StadiumBorder()
+                : RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(radius),
+                  ))
             : const StadiumBorder(),
       ),
       clipBehavior: Clip.antiAlias,
