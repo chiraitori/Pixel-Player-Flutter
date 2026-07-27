@@ -5,6 +5,7 @@ import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/models/song.dart';
+import '../../core/services/google_cast_service.dart';
 import '../../core/state/app_controller.dart';
 import '../../core/theme/player_palette_cache.dart';
 import '../../shared/widgets/artwork.dart';
@@ -38,12 +39,18 @@ class _MiniPlayerState extends State<MiniPlayer>
   void initState() {
     super.initState();
     _horizontalOffset = AnimationController.unbounded(vsync: this);
+    GoogleCastService.instance.addListener(_onCastStateChanged);
   }
 
   @override
   void dispose() {
+    GoogleCastService.instance.removeListener(_onCastStateChanged);
     _horizontalOffset.dispose();
     super.dispose();
+  }
+
+  void _onCastStateChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onHorizontalDragStart(DragStartDetails details) {
@@ -124,6 +131,7 @@ class _MiniPlayerState extends State<MiniPlayer>
     final song = controller.currentSong;
     if (song == null) return const SizedBox.shrink();
     _syncArtworkSeed(song);
+    final castConnecting = GoogleCastService.instance.connecting;
 
     final appColors = Theme.of(context).colorScheme;
     final useAlbumColors =
@@ -170,7 +178,7 @@ class _MiniPlayerState extends State<MiniPlayer>
         : controller.navBarCornerRadius;
     final bottomRadius = controller.navBarStyle == PixelNavBarStyle.fullWidth
         ? 32.0
-        : 10.0;
+        : controller.navBarCornerRadius;
     final miniPlayerBorderRadius = BorderRadius.vertical(
       top: Radius.circular(topRadius),
       bottom: Radius.circular(bottomRadius),
@@ -228,12 +236,25 @@ class _MiniPlayerState extends State<MiniPlayer>
                   padding: const EdgeInsets.only(left: 10, right: 12),
                   child: Row(
                     children: [
-                      Artwork(
-                        colors: song.colors,
-                        size: 44,
-                        borderRadius: 22,
-                        iconSize: 17,
-                        mediaStoreId: song.mediaStoreId,
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Artwork(
+                            colors: song.colors,
+                            size: 44,
+                            borderRadius: 22,
+                            iconSize: 17,
+                            mediaStoreId: song.mediaStoreId,
+                          ),
+                          if (castConnecting)
+                            SizedBox.square(
+                              dimension: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: colors.onPrimaryContainer,
+                              ),
+                            ),
+                        ],
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -243,7 +264,9 @@ class _MiniPlayerState extends State<MiniPlayer>
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             AutoScrollingText(
-                              text: song.title,
+                              text: castConnecting
+                                  ? 'Connecting to device…'
+                                  : song.title,
                               style: TextStyle(
                                 color: colors.onPrimaryContainer,
                                 fontFamily: 'GoogleSansFlex',
@@ -275,6 +298,7 @@ class _MiniPlayerState extends State<MiniPlayer>
                       ),
                       const SizedBox(width: 8),
                       _MiniControl(
+                        enabled: !castConnecting,
                         background: colors.onPrimary,
                         foreground: colors.primary,
                         icon: Icons.skip_previous_rounded,
@@ -291,6 +315,7 @@ class _MiniPlayerState extends State<MiniPlayer>
                       ),
                       const SizedBox(width: 8),
                       _MiniControl(
+                        enabled: !castConnecting,
                         background: colors.primary,
                         foreground: colors.onPrimary,
                         icon: controller.isPlaying
@@ -311,6 +336,7 @@ class _MiniPlayerState extends State<MiniPlayer>
                       ),
                       const SizedBox(width: 8),
                       _MiniControl(
+                        enabled: !castConnecting,
                         background: colors.onPrimary,
                         foreground: colors.primary,
                         icon: Icons.skip_next_rounded,
@@ -338,6 +364,7 @@ class _ColorSchemeTween extends Tween<ColorScheme> {
 
 class _MiniControl extends StatelessWidget {
   const _MiniControl({
+    this.enabled = true,
     required this.background,
     required this.foreground,
     required this.icon,
@@ -345,6 +372,7 @@ class _MiniControl extends StatelessWidget {
     required this.onPressed,
   });
 
+  final bool enabled;
   final Color background;
   final Color foreground;
   final IconData icon;
@@ -355,6 +383,7 @@ class _MiniControl extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
+      enabled: enabled,
       label: semanticLabel,
       child: SizedBox.square(
         // Keep an accessible 44 dp hit target while matching the source's
@@ -363,7 +392,7 @@ class _MiniControl extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkResponse(
-            onTap: onPressed,
+            onTap: enabled ? onPressed : null,
             radius: 22,
             containedInkWell: false,
             customBorder: const CircleBorder(),

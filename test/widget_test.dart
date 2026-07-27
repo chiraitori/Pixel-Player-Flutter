@@ -268,6 +268,76 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('expanded player adapts to landscape and reduced motion', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(MockLibrary.songs.first)
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              disableAnimations: true,
+              textScaler: const TextScaler.linear(1.3),
+            ),
+            child: child!,
+          ),
+          home: const AppShell(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('landscape-player')), findsOneWidget);
+    expect(find.text('Now Playing'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('One Peek carousel uses the Kotlin start alignment', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true)
+      ..setStringSetting('carousel_style', 'One Peek');
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(
+        MockLibrary.songs.first,
+        fromQueue: MockLibrary.songs.take(3).toList(),
+      )
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final carousel = tester.widget<PageView>(find.byType(PageView));
+    expect(carousel.padEnds, isFalse);
+    expect(carousel.controller!.viewportFraction, closeTo(.8, .001));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('mini player controls keep 44dp touch targets', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
@@ -292,6 +362,11 @@ void main() {
       expect(bounds.width, greaterThanOrEqualTo(44));
       expect(bounds.height, greaterThanOrEqualTo(44));
     }
+
+    await tester.tap(find.byKey(const ValueKey('mini-player')));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(controller.fullPlayerVisible, isTrue);
+    expect(find.text('Now Playing'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -1791,6 +1791,7 @@ class AppController extends ChangeNotifier {
     final index = playable.indexWhere((item) => item.id == song.id);
     final uri = song.playbackUri;
     if (uri == null || index < 0) {
+      debugPrint('PixelPlayer: Cannot play – uri=$uri, index=$index');
       isPlaying = false;
       notifyListeners();
       return;
@@ -1806,41 +1807,56 @@ class AppController extends ChangeNotifier {
       final freshGoogleDriveToken = containsGoogleDrive
           ? await GoogleDriveAuthService.instance.refreshAccessToken()
           : null;
+
+      debugPrint('PixelPlayer: Loading ${playable.length} tracks, '
+          'starting at index $index, uri=$uri');
+
+      final audioSources = playable.map((item) {
+        // Only pass headers for sources that need them (e.g. Google Drive).
+        // Passing empty headers to content:// URIs can cause issues.
+        final Map<String, String>? headers;
+        if (item.source == SongSource.googleDrive &&
+            freshGoogleDriveToken != null) {
+          headers = {'Authorization': 'Bearer $freshGoogleDriveToken'};
+        } else if (item.playbackHeaders.isNotEmpty) {
+          headers = item.playbackHeaders;
+        } else {
+          headers = null;
+        }
+
+        return AudioSource.uri(
+          item.playbackUri!,
+          headers: headers,
+          tag: MediaItem(
+            id: item.id,
+            title: item.title,
+            artist: item.artist,
+            album: item.album,
+            duration: item.duration,
+            artUri: item.albumId != null
+                ? Uri.parse(
+                    'content://media/external/audio/albumart/'
+                    '${item.albumId}',
+                  )
+                : (item.mediaStoreId != null
+                    ? Uri.parse(
+                        'content://media/external/audio/media/'
+                        '${item.mediaStoreId}/albumart',
+                      )
+                    : null),
+          ),
+        );
+      }).toList(growable: false);
+
       await player.setAudioSources(
-        playable
-            .map(
-              (item) => AudioSource.uri(
-                item.playbackUri!,
-                headers:
-                    item.source == SongSource.googleDrive &&
-                        freshGoogleDriveToken != null
-                    ? {'Authorization': 'Bearer $freshGoogleDriveToken'}
-                    : item.playbackHeaders,
-                tag: MediaItem(
-                  id: item.id,
-                  title: item.title,
-                  artist: item.artist,
-                  album: item.album,
-                  duration: item.duration,
-                  artUri: item.albumId != null
-                      ? Uri.parse(
-                          'content://media/external/audio/albumart/'
-                          '${item.albumId}',
-                        )
-                      : (item.mediaStoreId != null
-                          ? Uri.parse(
-                              'content://media/external/audio/media/'
-                              '${item.mediaStoreId}/albumart',
-                            )
-                          : null),
-                ),
-              ),
-            )
-            .toList(growable: false),
+        audioSources,
         initialIndex: index,
         initialPosition: initialPosition,
         shuffleOrder: DefaultShuffleOrder(),
       );
+
+      debugPrint('PixelPlayer: Audio sources loaded successfully');
+
       try {
         await _applyEqualizerSettings();
       } catch (_) {}
@@ -1853,11 +1869,13 @@ class AppController extends ChangeNotifier {
       if (shuffleEnabled) await player.shuffle();
       if (autoPlay) {
         await player.play();
+        debugPrint('PixelPlayer: play() called');
       } else {
         await player.pause();
       }
-    } catch (e) {
-      debugPrint('Error playing audio: $e');
+    } catch (e, stackTrace) {
+      debugPrint('PixelPlayer: Error playing audio: $e');
+      debugPrint('PixelPlayer: Stack trace: $stackTrace');
       isPlaying = false;
       notifyListeners();
     }

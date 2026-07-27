@@ -12,7 +12,7 @@ Future<void> main() async {
     androidNotificationChannelName: 'Audio playback',
     androidNotificationOngoing: true,
     androidStopForegroundOnPause: true,
-    androidNotificationIcon: 'drawable/audio_service_app_icon',
+    androidNotificationIcon: 'drawable/ic_notification',
   );
   await LyricsParser.ensureRomanizationInitialized();
   runApp(const PixelPlayApp());

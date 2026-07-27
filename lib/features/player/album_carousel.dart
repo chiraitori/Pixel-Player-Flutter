@@ -123,7 +123,10 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
           child: PageView.builder(
             controller: _pageController,
             itemCount: widget.queue.length,
-            padEnds: true,
+            // Kotlin's ONE_PEEK multi-browse carousel is start-aligned. Keeping
+            // padEnds disabled produces one trailing peek instead of two
+            // centered half-peeks; NO_PEEK remains a full-width page.
+            padEnds: widget.viewportFraction >= .999,
             itemBuilder: (context, index) {
               final song = widget.queue[index];
               return Padding(

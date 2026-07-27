@@ -9,6 +9,7 @@ class FullPlayerTopBar extends StatelessWidget {
     this.remoteRouteName,
     this.isBluetoothActive = false,
     this.bluetoothName,
+    this.showCloudStream = false,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class FullPlayerTopBar extends StatelessWidget {
   final String? remoteRouteName;
   final bool isBluetoothActive;
   final String? bluetoothName;
+  final bool showCloudStream;
 
   @override
   Widget build(BuildContext context) {
@@ -49,14 +51,29 @@ class FullPlayerTopBar extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(left: 18),
-              child: Text(
-                'Now Playing',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: colors.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      'Now Playing',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colors.onPrimaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (showCloudStream) ...[
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.cloud_rounded,
+                      size: 16,
+                      color: colors.onPrimaryContainer.withValues(alpha: .6),
+                      semanticLabel: 'Cloud stream',
+                    ),
+                  ],
+                ],
               ),
             ),
           ),

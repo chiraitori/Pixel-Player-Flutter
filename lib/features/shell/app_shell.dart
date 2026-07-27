@@ -39,7 +39,7 @@ class AppShell extends StatelessWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final transitionDuration = reduceMotion
         ? Duration.zero
-        : const Duration(milliseconds: 220);
+        : const Duration(milliseconds: 360);
     final systemNavBarInset = sanitizeNavigationBarBottomInset(
       MediaQuery.viewPaddingOf(context).bottom,
     );
@@ -113,135 +113,173 @@ class AppShell extends StatelessWidget {
               ignoring: !controller.fullPlayerVisible,
               child: AnimatedSlide(
                 duration: transitionDuration,
-                curve: Curves.easeOutCubic,
+                curve: Curves.fastOutSlowIn,
                 offset: controller.fullPlayerVisible
                     ? Offset.zero
                     : const Offset(0, 1),
-                child: TickerMode(
-                  enabled: controller.fullPlayerVisible,
-                  child: const FullPlayer(),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: controller.fullPlayerVisible ? 0 : 32),
+                  duration: transitionDuration,
+                  curve: Curves.fastOutSlowIn,
+                  builder: (context, topRadius, child) => Material(
+                    color: Colors.transparent,
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(topRadius),
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: child,
+                  ),
+                  child: TickerMode(
+                    enabled: controller.fullPlayerVisible,
+                    child: Builder(
+                      builder: (context) {
+                        final mediaQuery = MediaQuery.of(context);
+                        final padding = mediaQuery.padding;
+                        return MediaQuery(
+                          data: mediaQuery.copyWith(
+                            padding: EdgeInsets.fromLTRB(
+                              padding.left,
+                              padding.top,
+                              padding.right,
+                              mediaQuery.viewPadding.bottom,
+                            ),
+                          ),
+                          child: const FullPlayer(),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
           ],
         ),
-        bottomNavigationBar: controller.fullPlayerVisible
-            ? null
-            : AnimatedSlide(
-                duration: transitionDuration,
-                offset: controller.fullPlayerVisible
-                    ? const Offset(0, 1)
-                    : Offset.zero,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSwitcher(
-                      duration: transitionDuration,
-                      reverseDuration: transitionDuration,
-                      transitionBuilder: (child, animation) {
-                        return FadeTransition(
-                          opacity: animation,
-                          child: SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: const Offset(0, 1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: animation,
-                                    curve: Curves.easeOutCubic,
-                                  ),
+        bottomNavigationBar: IgnorePointer(
+          ignoring: controller.fullPlayerVisible,
+          child: AnimatedSlide(
+            duration: transitionDuration,
+            curve: Curves.fastOutSlowIn,
+            offset: controller.fullPlayerVisible
+                ? const Offset(0, 1)
+                : Offset.zero,
+            child: AnimatedOpacity(
+              duration: reduceMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              opacity: controller.fullPlayerVisible ? 0 : 1,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedSwitcher(
+                    duration: transitionDuration,
+                    reverseDuration: transitionDuration,
+                    transitionBuilder: (child, animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position:
+                              Tween<Offset>(
+                                begin: const Offset(0, 1),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutCubic,
                                 ),
-                            child: child,
-                          ),
-                        );
-                      },
-                      child: controller.showDismissUndoBar
-                          ? Padding(
-                              key: const ValueKey('dismiss-undo-bar'),
-                              padding: const EdgeInsets.fromLTRB(
-                                14,
-                                0,
-                                14,
-                                miniPlayerBottomSpacer,
                               ),
-                              child: DismissUndoBar(
-                                duration: AppController.dismissUndoDuration,
-                                onUndo: controller.undoDismissPlaylist,
-                                onClose: controller.clearDismissedPlaylist,
-                              ),
-                            )
-                          : const MiniPlayer(key: ValueKey('mini-player')),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: controller.showDismissUndoBar
+                        ? Padding(
+                            key: const ValueKey('dismiss-undo-bar'),
+                            padding: const EdgeInsets.fromLTRB(
+                              14,
+                              0,
+                              14,
+                              miniPlayerBottomSpacer,
+                            ),
+                            child: DismissUndoBar(
+                              duration: AppController.dismissUndoDuration,
+                              onUndo: controller.undoDismissPlaylist,
+                              onClose: controller.clearDismissedPlaylist,
+                            ),
+                          )
+                        : const MiniPlayer(key: ValueKey('mini-player')),
+                  ),
+                  AnimatedPadding(
+                    duration: reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 400),
+                    curve: Curves.fastOutSlowIn,
+                    padding: EdgeInsets.only(
+                      left: controller.navBarStyle == PixelNavBarStyle.floating
+                          ? floatingHorizontalPadding
+                          : 0,
+                      right: controller.navBarStyle == PixelNavBarStyle.floating
+                          ? floatingHorizontalPadding
+                          : 0,
+                      bottom:
+                          controller.navBarStyle == PixelNavBarStyle.floating
+                          ? systemNavBarInset
+                          : 0,
                     ),
-                    AnimatedPadding(
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween(end: navBarTopRadius),
                       duration: reduceMotion
                           ? Duration.zero
                           : const Duration(milliseconds: 400),
                       curve: Curves.fastOutSlowIn,
-                      padding: EdgeInsets.only(
-                        left:
-                            controller.navBarStyle == PixelNavBarStyle.floating
-                            ? floatingHorizontalPadding
-                            : 0,
-                        right:
-                            controller.navBarStyle == PixelNavBarStyle.floating
-                            ? floatingHorizontalPadding
-                            : 0,
-                        bottom:
-                            controller.navBarStyle == PixelNavBarStyle.floating
-                            ? systemNavBarInset
-                            : 0,
-                      ),
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween(end: navBarTopRadius),
-                        duration: reduceMotion
-                            ? Duration.zero
-                            : const Duration(milliseconds: 400),
-                        curve: Curves.fastOutSlowIn,
-                        builder: (context, animatedTopRadius, child) {
-                          return TweenAnimationBuilder<double>(
-                            tween: Tween(end: navBarBottomRadius),
-                            duration: reduceMotion
-                                ? Duration.zero
-                                : const Duration(milliseconds: 400),
-                            curve: Curves.fastOutSlowIn,
-                            child: child,
-                            builder: (context, animatedBottomRadius, child) {
-                              final borderRadius = BorderRadius.vertical(
-                                top: Radius.circular(animatedTopRadius),
-                                bottom: Radius.circular(animatedBottomRadius),
-                              );
-                              final shape = useSmoothCorners
-                                  ? RoundedSuperellipseBorder(
-                                      borderRadius: borderRadius,
-                                    )
-                                  : RoundedRectangleBorder(
-                                      borderRadius: borderRadius,
-                                    );
-                              return Material(
-                                elevation: 3,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainer,
-                                shape: shape,
-                                clipBehavior: Clip.antiAlias,
-                                child: child,
-                              );
-                            },
-                          );
-                        },
-                        child: PlayerInternalNavigationBar(
-                          selectedIndex: controller.selectedTab,
-                          onDestinationSelected: controller.selectTab,
-                          onSearchDoubleTap: () => controller.selectTab(1),
-                          style: controller.navBarStyle,
-                          compactMode: controller.navBarCompactMode,
-                        ),
+                      builder: (context, animatedTopRadius, child) {
+                        return TweenAnimationBuilder<double>(
+                          tween: Tween(end: navBarBottomRadius),
+                          duration: reduceMotion
+                              ? Duration.zero
+                              : const Duration(milliseconds: 400),
+                          curve: Curves.fastOutSlowIn,
+                          child: child,
+                          builder: (context, animatedBottomRadius, child) {
+                            final borderRadius = BorderRadius.vertical(
+                              top: Radius.circular(animatedTopRadius),
+                              bottom: Radius.circular(animatedBottomRadius),
+                            );
+                            final shape = useSmoothCorners
+                                ? RoundedSuperellipseBorder(
+                                    borderRadius: borderRadius,
+                                  )
+                                : RoundedRectangleBorder(
+                                    borderRadius: borderRadius,
+                                  );
+                            return Material(
+                              elevation: 3,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainer,
+                              shape: shape,
+                              clipBehavior: Clip.antiAlias,
+                              child: child,
+                            );
+                          },
+                        );
+                      },
+                      child: PlayerInternalNavigationBar(
+                        selectedIndex: controller.selectedTab,
+                        onDestinationSelected: controller.selectTab,
+                        onSearchDoubleTap: () => controller.selectTab(1),
+                        style: controller.navBarStyle,
+                        compactMode: controller.navBarCompactMode,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+            ),
+          ),
+        ),
       ),
     );
   }

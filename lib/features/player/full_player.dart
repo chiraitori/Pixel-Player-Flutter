@@ -19,7 +19,15 @@ import 'animated_playback_controls.dart';
 import 'bottom_toggle_row.dart';
 import 'full_player_top_bar.dart';
 import 'lyrics_screen.dart';
+import 'player_artist_picker_sheet.dart';
 import 'wavy_slider.dart';
+
+class _ColorSchemeTween extends Tween<ColorScheme> {
+  _ColorSchemeTween({required ColorScheme end}) : super(end: end);
+
+  @override
+  ColorScheme lerp(double t) => ColorScheme.lerp(begin!, end!, t);
+}
 
 class FullPlayer extends StatefulWidget {
   const FullPlayer({super.key});
@@ -101,112 +109,143 @@ class _FullPlayerState extends State<FullPlayer> {
       'Monochrome' => DynamicSchemeVariant.monochrome,
       _ => DynamicSchemeVariant.tonalSpot,
     };
-    final playerColors = useAlbumColors
+    final targetPlayerColors = useAlbumColors
         ? ColorScheme.fromSeed(
             seedColor: _artworkSeed ?? song.colors.first,
             brightness: brightness,
             dynamicSchemeVariant: variant,
           )
         : Theme.of(context).colorScheme;
-    final playerBackground = playerColors.primaryContainer;
-    final lightSystemIcons =
-        ThemeData.estimateBrightnessForColor(playerBackground) ==
-        Brightness.dark;
-    final systemStyle = SystemUiOverlayStyle(
-      statusBarColor: playerBackground,
-      statusBarIconBrightness: lightSystemIcons
-          ? Brightness.light
-          : Brightness.dark,
-      statusBarBrightness: lightSystemIcons
-          ? Brightness.dark
-          : Brightness.light,
-      systemNavigationBarColor: playerBackground,
-      systemNavigationBarIconBrightness: lightSystemIcons
-          ? Brightness.light
-          : Brightness.dark,
-      systemNavigationBarDividerColor: playerBackground,
-    );
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: systemStyle,
-      child: Theme(
-        data: PixelPlayTheme.fromColorScheme(playerColors),
-        child: Material(
-          color: playerBackground,
-          child: SafeArea(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onVerticalDragStart: (_) => _verticalDrag = 0,
-              onVerticalDragUpdate: (details) {
-                _verticalDrag += details.primaryDelta ?? 0;
-              },
-              onVerticalDragEnd: (details) {
-                final velocity = details.primaryVelocity ?? 0;
-                if (_verticalDrag > 5 || velocity > 150) {
-                  controller.hideFullPlayer();
-                } else if (_verticalDrag < -8 && velocity < -520) {
-                  _showQueue(context);
-                }
-                _verticalDrag = 0;
-              },
-              onTap:
-                  controller.boolSetting(
-                    'behavior_tap_background_closes_player',
-                    false,
-                  )
-                  ? controller.hideFullPlayer
-                  : null,
-              child: Column(
-                children: [
-                  AnimatedBuilder(
-                    animation: GoogleCastService.instance,
-                    builder: (context, _) => FullPlayerTopBar(
-                      onCollapse: controller.hideFullPlayer,
-                      onShowOutput: () => _showOutput(context, song),
-                      onShowQueue: () => _showQueue(context),
-                      isCastConnecting: GoogleCastService.instance.connecting,
-                      remoteRouteName: GoogleCastService.instance.routeName,
-                      isBluetoothActive: _isBluetoothActive,
-                      bluetoothName: _bluetoothName,
-                    ),
+    return TweenAnimationBuilder<ColorScheme>(
+      tween: _ColorSchemeTween(end: targetPlayerColors),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.fastOutSlowIn,
+      builder: (context, playerColors, _) {
+        final playerBackground = playerColors.primaryContainer;
+        final lightSystemIcons =
+            ThemeData.estimateBrightnessForColor(playerBackground) ==
+            Brightness.dark;
+        final systemStyle = SystemUiOverlayStyle(
+          statusBarColor: playerBackground,
+          statusBarIconBrightness: lightSystemIcons
+              ? Brightness.light
+              : Brightness.dark,
+          statusBarBrightness: lightSystemIcons
+              ? Brightness.dark
+              : Brightness.light,
+          systemNavigationBarColor: playerBackground,
+          systemNavigationBarIconBrightness: lightSystemIcons
+              ? Brightness.light
+              : Brightness.dark,
+          systemNavigationBarDividerColor: playerBackground,
+        );
+
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: systemStyle,
+          child: Theme(
+            data: PixelPlayTheme.fromColorScheme(playerColors),
+            child: Material(
+              color: playerBackground,
+              child: SafeArea(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragStart: (_) => _verticalDrag = 0,
+                  onVerticalDragUpdate: (details) {
+                    _verticalDrag += details.primaryDelta ?? 0;
+                  },
+                  onVerticalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (_verticalDrag > 5 || velocity > 150) {
+                      controller.hideFullPlayer();
+                    } else if (_verticalDrag < -8 && velocity < -520) {
+                      _showQueue(context);
+                    }
+                    _verticalDrag = 0;
+                  },
+                  onTap:
+                      controller.boolSetting(
+                        'behavior_tap_background_closes_player',
+                        false,
+                      )
+                      ? controller.hideFullPlayer
+                      : null,
+                  child: OrientationBuilder(
+                    builder: (context, orientation) {
+                      final isLandscape = orientation == Orientation.landscape;
+                      final reduceMotion = MediaQuery.disableAnimationsOf(
+                        context,
+                      );
+                      return Column(
+                        children: [
+                          AnimatedSize(
+                            duration: reduceMotion
+                                ? Duration.zero
+                                : const Duration(milliseconds: 350),
+                            curve: Curves.fastOutSlowIn,
+                            alignment: Alignment.topCenter,
+                            child: isLandscape
+                                ? const SizedBox(width: double.infinity)
+                                : AnimatedBuilder(
+                                    animation: GoogleCastService.instance,
+                                    builder: (context, _) => FullPlayerTopBar(
+                                      onCollapse: controller.hideFullPlayer,
+                                      onShowOutput: () =>
+                                          _showOutput(context, song),
+                                      onShowQueue: () => _showQueue(context),
+                                      isCastConnecting:
+                                          GoogleCastService.instance.connecting,
+                                      remoteRouteName:
+                                          GoogleCastService.instance.routeName,
+                                      isBluetoothActive: _isBluetoothActive,
+                                      bluetoothName: _bluetoothName,
+                                      showCloudStream:
+                                          song.source == SongSource.telegram ||
+                                          song.source == SongSource.googleDrive,
+                                    ),
+                                  ),
+                          ),
+                          Expanded(
+                            child: AnimatedSwitcher(
+                              duration: reduceMotion
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 380),
+                              switchInCurve: Curves.fastOutSlowIn,
+                              child: isLandscape
+                                  ? _LandscapePlayerContent(
+                                      key: const ValueKey('landscape-player'),
+                                      song: song,
+                                      onLyrics: () =>
+                                          _showLyrics(context, song),
+                                      onQueue: () => _showQueue(context),
+                                      onAlbum: (albumSong) =>
+                                          _openAlbum(context, albumSong),
+                                      onArtist: (artistSong) =>
+                                          _openArtist(context, artistSong),
+                                    )
+                                  : _PortraitPlayerContent(
+                                      key: const ValueKey('portrait-player'),
+                                      song: song,
+                                      onLyrics: () =>
+                                          _showLyrics(context, song),
+                                      onQueue: () => _showQueue(context),
+                                      onAlbum: (albumSong) =>
+                                          _openAlbum(context, albumSong),
+                                      onArtist: (artistSong) =>
+                                          _openArtist(context, artistSong),
+                                    ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-                  Expanded(
-                    child: OrientationBuilder(
-                      builder: (context, orientation) {
-                        return AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 220),
-                          switchInCurve: Curves.fastOutSlowIn,
-                          child: orientation == Orientation.landscape
-                              ? _LandscapePlayerContent(
-                                  key: const ValueKey('landscape-player'),
-                                  song: song,
-                                  onLyrics: () => _showLyrics(context, song),
-                                  onQueue: () => _showQueue(context),
-                                  onAlbum: (albumSong) =>
-                                      _openAlbum(context, albumSong),
-                                  onArtist: (artistSong) =>
-                                      _openArtist(context, artistSong),
-                                )
-                              : _PortraitPlayerContent(
-                                  key: const ValueKey('portrait-player'),
-                                  song: song,
-                                  onLyrics: () => _showLyrics(context, song),
-                                  onQueue: () => _showQueue(context),
-                                  onAlbum: (albumSong) =>
-                                      _openAlbum(context, albumSong),
-                                  onArtist: (artistSong) =>
-                                      _openArtist(context, artistSong),
-                                ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -429,12 +468,47 @@ class _FullPlayerState extends State<FullPlayer> {
 
   void _openArtist(BuildContext context, Song song) {
     final controller = AppScope.of(context);
+    final artistNames = controller.splitArtistNames(song.artist);
+    final libraryArtists = controller.artists;
+    final resolvedArtists = <Artist>[
+      for (final name in artistNames)
+        libraryArtists.firstWhere(
+          (artist) => artist.name.toLowerCase() == name.toLowerCase(),
+          orElse: () => Artist(
+            id: '${song.artistId ?? 'artist'}:${name.toLowerCase()}',
+            name: name,
+            songs: [song],
+          ),
+        ),
+    ];
+
+    if (resolvedArtists.length > 1) {
+      unawaited(
+        showPlayerArtistPickerSheet(
+          context: context,
+          artists: resolvedArtists,
+          onArtistSelected: (artist) =>
+              _navigateToArtist(context, controller, artist.id),
+        ),
+      );
+      return;
+    }
+
+    final artistId = resolvedArtists.isEmpty
+        ? song.artistId?.toString() ?? song.artist
+        : resolvedArtists.first.id;
+    _navigateToArtist(context, controller, artistId);
+  }
+
+  void _navigateToArtist(
+    BuildContext context,
+    AppController controller,
+    String artistId,
+  ) {
     controller.hideFullPlayer();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ArtistDetailScreen(
-          artistId: song.artistId?.toString() ?? song.artist,
-        ),
+        builder: (_) => ArtistDetailScreen(artistId: artistId),
       ),
     );
   }
