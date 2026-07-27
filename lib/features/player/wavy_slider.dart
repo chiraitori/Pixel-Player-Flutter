@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class WavySlider extends StatefulWidget {
   const WavySlider({
@@ -15,7 +16,7 @@ class WavySlider extends StatefulWidget {
     this.thumbRadius = 8,
     this.trackEdgePadding = 8,
     this.wavelength = 24,
-    this.waveAmplitude = 4,
+    this.waveAmplitude = 3.5,
     this.interactingThumbHeight = 24,
     super.key,
   });
@@ -41,23 +42,46 @@ class WavySlider extends StatefulWidget {
 class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
   late final AnimationController _wave;
   late final AnimationController _interaction;
+  late final AnimationController _progressTween;
+
+  double _renderedProgress = 0.0;
+  double _targetProgress = 0.0;
   double? _gestureValue;
+  int _lastHapticStep = -1;
+  double _lastSeekTarget = -1.0;
+  DateTime? _lastSeekTime;
   bool _disableAnimations = false;
 
-  double get _value => (_gestureValue ?? widget.value).clamp(0, 1);
+  double get _currentValue => (_gestureValue ?? _renderedProgress).clamp(0.0, 1.0);
 
   @override
   void initState() {
     super.initState();
+    _renderedProgress = widget.value.clamp(0.0, 1.0);
+    _targetProgress = _renderedProgress;
+
     _wave = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2000),
+      duration: const Duration(milliseconds: 2400),
     );
     _interaction = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 180),
+      duration: const Duration(milliseconds: 220),
     );
+    _progressTween = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 250),
+    )..addListener(_onProgressTick);
+
     _syncWave();
+  }
+
+  void _onProgressTick() {
+    if (_gestureValue != null) return;
+    setState(() {
+      _renderedProgress = _renderedProgress +
+          (_targetProgress - _renderedProgress) * _progressTween.value;
+    });
   }
 
   @override
@@ -73,6 +97,33 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
   void didUpdateWidget(covariant WavySlider oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isPlaying != widget.isPlaying) _syncWave();
+
+    if (_gestureValue == null) {
+      final newTarget = widget.value.clamp(0.0, 1.0);
+
+      // Check if seek was recent and audio engine hasn't caught up yet
+      if (_lastSeekTarget >= 0 && _lastSeekTime != null) {
+        final elapsed = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
+        final diff = (newTarget - _lastSeekTarget).abs();
+        if (elapsed < 3000 && diff > 0.04) {
+          // Keep current target while waiting for engine catch-up
+          return;
+        } else {
+          _lastSeekTarget = -1.0;
+        }
+      }
+
+      // If big jump (song change / manual seek), snap immediately
+      if ((newTarget - _renderedProgress).abs() > 0.12) {
+        setState(() {
+          _targetProgress = newTarget;
+          _renderedProgress = newTarget;
+        });
+      } else if ((newTarget - _targetProgress).abs() > 0.0005) {
+        _targetProgress = newTarget;
+        _progressTween.forward(from: 0.0);
+      }
+    }
   }
 
   void _syncWave() {
@@ -87,6 +138,7 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
   void dispose() {
     _wave.dispose();
     _interaction.dispose();
+    _progressTween.dispose();
     super.dispose();
   }
 
@@ -97,21 +149,40 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
 
   void _start(Offset localPosition, double width) {
     _interaction.forward();
-    final value = _valueForX(localPosition.dx, width);
-    setState(() => _gestureValue = value);
-    widget.onChanged(value);
+    final val = _valueForX(localPosition.dx, width);
+    _lastHapticStep = (val * 20).round();
+    setState(() {
+      _gestureValue = val;
+      _renderedProgress = val;
+    });
+    widget.onChanged(val);
   }
 
   void _update(Offset localPosition, double width) {
-    final value = _valueForX(localPosition.dx, width);
-    setState(() => _gestureValue = value);
-    widget.onChanged(value);
+    final val = _valueForX(localPosition.dx, width);
+    final step = (val * 20).round();
+    if (step != _lastHapticStep) {
+      _lastHapticStep = step;
+      HapticFeedback.selectionClick();
+    }
+
+    setState(() {
+      _gestureValue = val;
+      _renderedProgress = val;
+    });
+    widget.onChanged(val);
   }
 
   void _finish() {
-    final value = _value;
-    widget.onChangeEnd(value);
-    setState(() => _gestureValue = null);
+    final val = _currentValue;
+    _lastSeekTarget = val;
+    _lastSeekTime = DateTime.now();
+    widget.onChangeEnd(val);
+    setState(() {
+      _gestureValue = null;
+      _targetProgress = val;
+      _renderedProgress = val;
+    });
     _interaction.reverse();
   }
 
@@ -124,19 +195,7 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
     return Semantics(
       slider: true,
       label: 'Playback position',
-      value: '${(_value * 100).round()}%',
-      increasedValue: '${((_value + .01).clamp(0, 1) * 100).round()}%',
-      decreasedValue: '${((_value - .01).clamp(0, 1) * 100).round()}%',
-      onIncrease: () {
-        final value = (_value + .01).clamp(0.0, 1.0);
-        widget.onChanged(value);
-        widget.onChangeEnd(value);
-      },
-      onDecrease: () {
-        final value = (_value - .01).clamp(0.0, 1.0);
-        widget.onChanged(value);
-        widget.onChangeEnd(value);
-      },
+      value: '${(_currentValue * 100).round()}%',
       child: SizedBox(
         height: height,
         child: LayoutBuilder(
@@ -149,10 +208,10 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
             onPanEnd: (_) => _finish(),
             onPanCancel: _finish,
             child: AnimatedBuilder(
-              animation: Listenable.merge([_wave, _interaction]),
+              animation: Listenable.merge([_wave, _interaction, _progressTween]),
               builder: (context, child) => CustomPaint(
                 painter: _WavySliderPainter(
-                  value: _value,
+                  value: _currentValue,
                   wavePhase: _wave.value,
                   interaction: Curves.fastOutSlowIn.transform(
                     _interaction.value,
@@ -164,8 +223,7 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
                   thumbRadius: widget.thumbRadius,
                   edgePadding: widget.trackEdgePadding,
                   wavelength: widget.wavelength,
-                  amplitude:
-                      widget.isPlaying &&
+                  amplitude: widget.isPlaying &&
                           !_disableAnimations &&
                           _gestureValue == null
                       ? widget.waveAmplitude
@@ -220,11 +278,13 @@ class _WavySliderPainter extends CustomPainter {
     final thumbX = start + width * value;
     final thumbWidth =
         thumbRadius * 2 * (1 - interaction) + strokeWidth * 1.2 * interaction;
-    final thumbRadiusCurrent = thumbWidth / 2;
-    final gap = 10.0 + 4.0 * interaction;
+    final thumbHeight =
+        thumbRadius * 2 * (1 - interaction) +
+        interactingThumbHeight * interaction;
+    final gap = 6.0 + (thumbWidth / 2 + 1.2 - 6.0) * interaction;
 
-    // 1. Draw Active Wave Track (connects seamlessly to the thumb)
-    final activeEnd = math.max(start, thumbX);
+    // 1. Draw Active Wave Track (stops cleanly before the thumb gap)
+    final activeEnd = math.max(start, thumbX - thumbWidth / 2 - gap);
     if (activeEnd > start) {
       final activePaint = Paint()
         ..color = activeColor
@@ -247,20 +307,20 @@ class _WavySliderPainter extends CustomPainter {
       canvas.drawPath(path, activePaint);
     }
 
-    // 2. Draw Inactive Track (starts after a distinct GAP from the thumb)
+    // 2. Draw Inactive Track (starts after thumb gap)
     final inactivePaint = Paint()
       ..color = inactiveColor
       ..strokeWidth = strokeWidth * 0.6
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
-    final inactiveStart = math.min(end, thumbX + thumbRadiusCurrent + gap);
+    final inactiveStart = math.min(end, thumbX + thumbWidth / 2 + gap);
     if (inactiveStart < end) {
       canvas.drawLine(
         Offset(inactiveStart, centerY),
         Offset(end - 3, centerY),
         inactivePaint,
       );
-      // Draw stop dot at the end of the inactive track (Material 3 Expressive style)
+      // Draw stop dot at the end of the inactive track
       canvas.drawCircle(
         Offset(end, centerY),
         strokeWidth * 0.45,
@@ -268,9 +328,7 @@ class _WavySliderPainter extends CustomPainter {
       );
     }
 
-    final thumbHeight =
-        thumbRadius * 2 * (1 - interaction) +
-        interactingThumbHeight * interaction;
+    // 3. Draw Thumb (Morphs from circle to tall capsule bar)
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(
