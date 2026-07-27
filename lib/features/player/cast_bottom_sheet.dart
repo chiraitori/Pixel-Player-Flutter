@@ -6,7 +6,6 @@ import 'package:flutter_chrome_cast/entities.dart' show GoogleCastDevice;
 import '../../core/models/song.dart';
 import '../../core/services/google_cast_service.dart';
 import '../../core/state/app_controller.dart';
-import '../../shared/widgets/m3_expressive_loading_indicator.dart';
 
 Future<void> showCastBottomSheet({
   required BuildContext context,

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_chrome_cast/entities.dart' show GoogleCastDevice;
 
 import '../../core/models/song.dart';
 import '../../core/services/audio_meta_service.dart';
