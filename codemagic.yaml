@@ -1,0 +1,47 @@
+workflows:
+  android-workflow:
+    name: PixelPlayer Android Build
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+      java: 17
+    scripts:
+      - name: Get Flutter dependencies
+        script: |
+          flutter pub get
+      - name: Run Static Analysis & Tests
+        script: |
+          flutter analyze
+          flutter test
+      - name: Build Android Release APK
+        script: |
+          flutter build apk --release
+      - name: Build Android App Bundle (AAB)
+        script: |
+          flutter build appbundle --release
+    artifacts:
+      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/bundle/**/*.aab
+
+  ios-workflow:
+    name: PixelPlayer iOS Build
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get Flutter dependencies
+        script: |
+          flutter pub get
+      - name: Install CocoaPods dependencies
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+      - name: Build iOS App (No Sign)
+        script: |
+          flutter build ios --release --no-codesign
+    artifacts:
+      - build/ios/iphoneos/*.app
+      - build/ios/ipa/*.ipa

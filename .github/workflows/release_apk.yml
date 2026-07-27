@@ -1,0 +1,40 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build_release_apk:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK (Release)
+        run: flutter build apk --release
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixelplayer-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
