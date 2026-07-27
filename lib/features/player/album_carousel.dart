@@ -130,9 +130,7 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
             padEnds: widget.viewportFraction >= .999,
             itemBuilder: (context, index) {
               final song = widget.queue[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: GestureDetector(
+              return GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: index == _currentIndex && widget.onArtworkTap != null
                       ? () => widget.onArtworkTap!(song)
@@ -150,7 +148,6 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
                           mediaStoreId: song.mediaStoreId,
                         );
                       },
-                    ),
                   ),
                 ),
               );

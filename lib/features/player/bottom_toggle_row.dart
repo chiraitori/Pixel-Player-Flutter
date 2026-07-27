@@ -26,8 +26,7 @@ class BottomToggleRow extends StatelessWidget {
     final inactiveIconColor = colors.onSurfaceVariant;
 
     return Container(
-      height: 68,
-      margin: const EdgeInsets.symmetric(horizontal: 24),
+      height: 72,
       padding: const EdgeInsets.all(8),
       decoration: ShapeDecoration(
         color: containerBg,
@@ -111,7 +110,7 @@ class _ToggleSegment extends StatelessWidget {
       curve: Curves.fastOutSlowIn,
       decoration: BoxDecoration(
         color: active ? activeColor : inactiveColor,
-        borderRadius: BorderRadius.circular(active ? 60 : 18),
+        borderRadius: BorderRadius.circular(active ? 60 : 8),
       ),
       clipBehavior: Clip.antiAlias,
       child: Material(

@@ -149,7 +149,13 @@ class _FullPlayerState extends State<FullPlayer> {
             data: PixelPlayTheme.fromColorScheme(playerColors),
             child: Material(
               color: playerBackground,
+              // Compose draws the player edge-to-edge horizontally and only
+              // consumes the system bars vertically. Flutter's default
+              // SafeArea adds this device's curved-display inset on both
+              // sides, which made the album art narrower than the Kotlin UI.
               child: SafeArea(
+                left: false,
+                right: false,
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onVerticalDragStart: (_) => _verticalDrag = 0,
@@ -548,6 +554,7 @@ class _PortraitPlayerContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     return LayoutBuilder(
+      key: const ValueKey('player-portrait-content'),
       builder: (context, constraints) {
         final contentWidth = (constraints.maxWidth - 48).clamp(0.0, 600.0);
         final carouselFraction = _carouselFraction(controller);
@@ -556,13 +563,17 @@ class _PortraitPlayerContent extends StatelessWidget {
         final carouselWidth = contentWidth;
         final carouselHeight = carouselWidth * carouselFraction;
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          // Flutter's player overlay retains an 8dp internal render inset on
+          // this device. A 16dp layout inset produces Kotlin's final 24dp
+          // visual edge inset (72 physical pixels at 3x density).
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: SizedBox(
+                  key: const ValueKey('player-album-carousel'),
                   width: carouselWidth,
                   height: carouselHeight,
                   child: AlbumCarousel(
