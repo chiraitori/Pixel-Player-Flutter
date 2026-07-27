@@ -563,10 +563,7 @@ class _PortraitPlayerContent extends StatelessWidget {
         final carouselWidth = contentWidth;
         final carouselHeight = carouselWidth * carouselFraction;
         return Padding(
-          // Flutter's player overlay retains an 8dp internal render inset on
-          // this device. A 16dp layout inset produces Kotlin's final 24dp
-          // visual edge inset (72 physical pixels at 3x density).
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
