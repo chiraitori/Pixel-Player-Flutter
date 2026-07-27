@@ -103,6 +103,18 @@ class ArtworkQuery : ViewModel() {
         // If 'Android' < 29/Q:
         //   * Use the 'embeddedPicture' from 'MediaMetadataRetriever' to get the image.
         if (Build.VERSION.SDK_INT >= 29) {
+            // Some vendor MediaStore implementations (including the one used
+            // by PixelPlayer's test device) don't expose audio thumbnails via
+            // loadThumbnail even though the file contains embedded artwork.
+            // Keep the fast platform thumbnail path, then mirror the pre-Q
+            // behavior by reading the embedded picture from the same
+            // MediaStore file descriptor.
+            val query = if (type == 2 || type == 3 || type == 4) {
+                val item = helper.loadFirstItem(type, id, resolver) ?: return@withContext null
+                ContentUris.withAppendedId(uri, item.toLong())
+            } else {
+                ContentUris.withAppendedId(uri, id.toLong())
+            }
             try {
                 // If 'type' is 2, 3 or 4, Get the first item from playlist or artist.
                 // Use the first artist song to 'simulate' the artwork.
@@ -113,19 +125,29 @@ class ArtworkQuery : ViewModel() {
                 //   * 4 -> Genre.
                 //
                 // OBS: The 'id' is defined as 'Number'. Convert to 'Long'
-                val query = if (type == 2 || type == 3 || type == 4) {
-                    val item = helper.loadFirstItem(type, id, resolver) ?: return@withContext null
-                    ContentUris.withAppendedId(uri, item.toLong())
-                } else {
-                    ContentUris.withAppendedId(uri, id.toLong())
-                }
-
                 val bitmap = resolver.loadThumbnail(query, Size(size, size), null)
                 artData = convertOrResize(bitmap = bitmap)!!
             } catch (e: Exception) {
                 // This may produce a lot of logging on console so, will required a explicit request
                 // to show the errors.
                 if (showDetailedLog) Log.w(TAG, "($id) Message: $e")
+            }
+            if (artData == null || artData!!.isEmpty()) {
+                try {
+                    resolver.openFileDescriptor(query, "r")?.use { descriptor ->
+                        val metadata = MediaMetadataRetriever()
+                        try {
+                            metadata.setDataSource(descriptor.fileDescriptor)
+                            artData = convertOrResize(byteArray = metadata.embeddedPicture)
+                        } finally {
+                            metadata.release()
+                        }
+                    }
+                } catch (e: Exception) {
+                    if (showDetailedLog) {
+                        Log.w(TAG, "($id) Embedded artwork fallback: $e")
+                    }
+                }
             }
         } else {
             // If 'uri == Audio':

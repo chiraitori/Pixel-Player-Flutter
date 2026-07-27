@@ -351,7 +351,7 @@ class SettingsChoiceItem extends StatelessWidget {
   }
 }
 
-class SettingsSliderItem extends StatelessWidget {
+class SettingsSliderItem extends StatefulWidget {
   const SettingsSliderItem({
     required this.label,
     required this.value,
@@ -374,6 +374,25 @@ class SettingsSliderItem extends StatelessWidget {
   final ValueChanged<double>? onChangeEnd;
 
   @override
+  State<SettingsSliderItem> createState() => _SettingsSliderItemState();
+}
+
+class _SettingsSliderItemState extends State<SettingsSliderItem> {
+  int _lastStepIndex = -1;
+
+  void _handleChanged(double newValue) {
+    if (widget.divisions > 0) {
+      final stepSpan = (widget.max - widget.min) / widget.divisions;
+      final stepIndex = stepSpan > 0 ? ((newValue - widget.min) / stepSpan).round() : 0;
+      if (stepIndex != _lastStepIndex) {
+        _lastStepIndex = stepIndex;
+        HapticFeedback.selectionClick();
+      }
+    }
+    widget.onChanged(newValue);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Material(
@@ -381,40 +400,197 @@ class SettingsSliderItem extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
           children: [
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    widget.label,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  valueText(value),
+                  widget.valueText(widget.value),
                   maxLines: 1,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                        color: colors.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
                 ),
               ],
             ),
-            Slider(
-              value: value.clamp(min, max),
-              min: min,
-              max: max,
-              divisions: divisions,
-              onChanged: onChanged,
-              onChangeEnd: onChangeEnd,
+            const SizedBox(height: 6),
+            SliderTheme(
+              data: SliderThemeData(
+                trackHeight: 22,
+                activeTrackColor: colors.primary,
+                inactiveTrackColor: colors.surfaceContainerHigh,
+                thumbColor: colors.primaryContainer,
+                overlayShape: SliderComponentShape.noOverlay,
+                trackShape: _M3ExpressiveSettingsSliderTrackShape(
+                  divisions: widget.divisions,
+                ),
+                thumbShape: _M3ExpressiveSettingsSliderThumbShape(
+                  activeColor: colors.onPrimaryContainer,
+                ),
+              ),
+              child: Slider(
+                value: widget.value.clamp(widget.min, widget.max),
+                min: widget.min,
+                max: widget.max,
+                divisions: widget.divisions > 0 ? widget.divisions : null,
+                onChanged: _handleChanged,
+                onChangeEnd: widget.onChangeEnd,
+              ),
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+class _M3ExpressiveSettingsSliderTrackShape extends SliderTrackShape {
+  const _M3ExpressiveSettingsSliderTrackShape({required this.divisions});
+
+  final int divisions;
+
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    Offset offset = Offset.zero,
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+  }) {
+    final trackHeight = sliderTheme.trackHeight ?? 22.0;
+    final trackLeft = offset.dx + 4;
+    final trackTop = offset.dy + (parentBox.size.height - trackHeight) / 2;
+    final trackWidth = parentBox.size.width - 8;
+    return Rect.fromLTWH(trackLeft, trackTop, trackWidth, trackHeight);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+    double additionalActiveTrackHeight = 0,
+  }) {
+    final canvas = context.canvas;
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+
+    final trackRadius = Radius.circular(trackRect.height / 2);
+
+    // Inactive Track
+    final inactivePaint = Paint()
+      ..color = sliderTheme.inactiveTrackColor ?? Colors.grey.withValues(alpha: 0.2);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(trackRect, trackRadius),
+      inactivePaint,
+    );
+
+    // Active Track
+    final activeRect = Rect.fromLTRB(
+      trackRect.left,
+      trackRect.top,
+      thumbCenter.dx.clamp(trackRect.left, trackRect.right),
+      trackRect.bottom,
+    );
+    final activePaint = Paint()..color = sliderTheme.activeTrackColor ?? Colors.blue;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(activeRect, trackRadius),
+      activePaint,
+    );
+
+    // Step Dots
+    if (divisions > 1) {
+      final activeDotPaint = Paint()
+        ..color = (sliderTheme.activeTrackColor ?? Colors.blue).withValues(alpha: 0.35);
+      final inactiveDotPaint = Paint()
+        ..color = (sliderTheme.activeTrackColor ?? Colors.blue).withValues(alpha: 0.7);
+
+      final stepWidth = trackRect.width / divisions;
+      for (int i = 0; i <= divisions; i++) {
+        final dotX = trackRect.left + i * stepWidth;
+        final dotCenter = Offset(dotX, trackRect.center.dy);
+        final isActive = dotX <= thumbCenter.dx + 2;
+
+        canvas.drawCircle(
+          dotCenter,
+          2.0,
+          isActive ? activeDotPaint : inactiveDotPaint,
+        );
+      }
+    }
+  }
+}
+
+class _M3ExpressiveSettingsSliderThumbShape extends SliderComponentShape {
+  const _M3ExpressiveSettingsSliderThumbShape({required this.activeColor});
+
+  final Color activeColor;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => const Size(20, 36);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+    final thumbWidth = 20.0;
+    final thumbHeight = 36.0;
+    final rect = Rect.fromCenter(
+      center: center,
+      width: thumbWidth,
+      height: thumbHeight,
+    );
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(10));
+
+    // Draw Thumb (Pill)
+    final thumbColor = sliderTheme.thumbColor ?? Colors.white;
+    canvas.drawRRect(rrect, Paint()..color = thumbColor);
+
+    // Draw 3 small dots inside thumb (...)
+    final dotPaint = Paint()..color = activeColor;
+    for (int i = -1; i <= 1; i++) {
+      canvas.drawCircle(
+        Offset(center.dx, center.dy + (i * 6.0)),
+        1.5,
+        dotPaint,
+      );
+    }
   }
 }
 

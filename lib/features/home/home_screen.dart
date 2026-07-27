@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../core/models/song.dart';
@@ -95,6 +97,7 @@ class _HomeScreenState extends State<HomeScreen> {
           controller: _scrollController,
           slivers: [
             SliverAppBar(
+              key: const ValueKey('home-top-bar'),
               toolbarHeight: 64,
               floating: false,
               pinned: true,
@@ -133,11 +136,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   else ...[
                     _YourMixHeader(
+                      key: const ValueKey('home-your-mix-header'),
                       shuffleEnabled: controller.shuffleEnabled,
                       onPlay: () => controller.playShuffled(yourMixSongs),
                     ),
                     const SizedBox(height: 24),
                     AlbumArtCollage(
+                      key: const ValueKey('home-album-art-collage'),
                       songs: yourMixSongs,
                       pattern: CollagePattern.fromStorageKey(
                         controller.stringSetting(
@@ -156,6 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (dailyMixSongs.isNotEmpty) ...[
                     const SizedBox(height: 24),
                     DailyMixSection(
+                      key: const ValueKey('home-daily-mix-section'),
                       songs: dailyMixSongs,
                       onOpen: widget.onOpenDailyMix,
                     ),
@@ -163,12 +169,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (recentSongs.length >= 4) ...[
                     const SizedBox(height: 24),
                     RecentlyPlayedSection(
+                      key: const ValueKey('home-recently-played-section'),
                       songs: recentSongs,
                       onOpenAll: widget.onOpenRecentlyPlayed,
                     ),
                   ],
                   const SizedBox(height: 24),
                   StatsOverviewCard(
+                    key: const ValueKey('home-stats-overview'),
                     snapshot: weekStats,
                     songs: controller.songs,
                     onTap: widget.onOpenStats,
@@ -246,19 +254,16 @@ class _YourMixLoadingPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: Container(
-        height: 220,
-        decoration: ShapeDecoration(
-          color: colors.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(28),
+      padding: const EdgeInsets.all(16),
+      child: SizedBox(
+        height: 224,
+        child: Center(
+          child: M3ExpressiveLoadingIndicator(
+            contained: false,
+            size: 128,
+            color: Theme.of(context).colorScheme.primary,
           ),
-        ),
-        child: const Center(
-          child: M3ExpressiveLoadingIndicator(contained: true, size: 36),
         ),
       ),
     );
@@ -329,7 +334,11 @@ class _YourMixEmptyPlaceholder extends StatelessWidget {
 }
 
 class _YourMixHeader extends StatelessWidget {
-  const _YourMixHeader({required this.shuffleEnabled, required this.onPlay});
+  const _YourMixHeader({
+    required this.shuffleEnabled,
+    required this.onPlay,
+    super.key,
+  });
 
   final bool shuffleEnabled;
   final VoidCallback onPlay;
@@ -345,7 +354,7 @@ class _YourMixHeader extends StatelessWidget {
         child: Stack(
           children: [
             Positioned(
-              top: 48,
+              top: 55,
               left: 12,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,10 +365,19 @@ class _YourMixHeader extends StatelessWidget {
                       fontFamily: 'GoogleSansFlex',
                       fontSize: 64,
                       height: 62 / 64,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.normal,
+                      fontVariations: const [
+                        ui.FontVariation('wght', 636),
+                        ui.FontVariation('wdth', 87),
+                        ui.FontVariation('ROND', 50),
+                        ui.FontVariation('XTRA', 520),
+                        ui.FontVariation('YOPQ', 90),
+                        ui.FontVariation('YTLC', 505),
+                      ],
                       color: colors.onSurface,
                     ),
                   ),
+                  const SizedBox(height: 8),
                   Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: Text(
@@ -380,6 +398,7 @@ class _YourMixHeader extends StatelessWidget {
                 button: true,
                 label: 'Shuffle Play',
                 child: Material(
+                  key: const ValueKey('home-shuffle-play'),
                   color: shuffleEnabled
                       ? colors.primary
                       : colors.tertiaryContainer,

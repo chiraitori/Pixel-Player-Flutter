@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:on_audio_query/on_audio_query.dart';
+
+import '../../core/services/artwork_cache.dart';
 
 class Artwork extends StatelessWidget {
   const Artwork({
@@ -71,18 +72,24 @@ class Artwork extends StatelessWidget {
     final id = mediaStoreId;
     final art = id == null
         ? placeholder
-        : QueryArtworkWidget(
-            id: id,
-            type: ArtworkType.AUDIO,
-            size: ((size ?? 300) * 2).round().clamp(200, 1200),
-            quality: 92,
-            artworkWidth: width ?? size ?? double.infinity,
-            artworkHeight: height ?? size ?? double.infinity,
-            artworkFit: fit,
-            artworkBorder: BorderRadius.circular(borderRadius),
-            keepOldArtwork: true,
-            nullArtworkWidget: placeholder,
-            errorBuilder: (_, _, _) => placeholder,
+        : FutureBuilder(
+            future: ArtworkCache.bytesForId(id),
+            builder: (context, snapshot) {
+              final bytes = snapshot.data;
+              if (bytes == null || bytes.isEmpty) return placeholder;
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(borderRadius),
+                child: Image.memory(
+                  bytes,
+                  width: width ?? size ?? double.infinity,
+                  height: height ?? size ?? double.infinity,
+                  fit: fit,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (_, _, _) => placeholder,
+                ),
+              );
+            },
           );
     if (heroTag == null) return art;
     return Hero(tag: heroTag!, child: art);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/song.dart';
 import '../../../core/state/app_controller.dart';
+import '../../../core/theme/player_palette_cache.dart';
 import '../../../shared/widgets/artwork.dart';
 
 const _pillHeight = 58.0;
@@ -40,7 +41,7 @@ class RecentlyPlayedSection extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 6),
                 child: Text(
-                  'Recently played',
+                  'Recently Played',
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
@@ -133,19 +134,32 @@ class _RecentlyPlayedPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return FutureBuilder<Color>(
+      future: PlayerPaletteCache.seedFor(song),
+      initialData: song.colors.isEmpty ? null : song.colors.first,
+      builder: (context, snapshot) => _buildPill(
+        context,
+        snapshot.data ?? Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+
+  Widget _buildPill(BuildContext context, Color artworkSeed) {
     final controller = AppScope.of(context);
     final isCurrent = controller.currentSong?.id == song.id;
     final albumScheme = ColorScheme.fromSeed(
-      seedColor: song.colors.isEmpty
-          ? Theme.of(context).colorScheme.primary
-          : song.colors.first,
+      seedColor: artworkSeed,
       brightness: Theme.of(context).brightness,
     );
     final targetRadius = isCurrent ? 14.0 : _pillHeight / 2;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final duration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 280);
 
     return AnimatedContainer(
       key: ValueKey(song.id),
-      duration: const Duration(milliseconds: 280),
+      duration: duration,
       curve: Curves.easeInOut,
       width: _resolvePillWidth(song.title, song.artist),
       height: _pillHeight,
@@ -175,7 +189,7 @@ class _RecentlyPlayedPill extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 280),
+                        duration: duration,
                         curve: Curves.easeInOut,
                         style:
                             Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -189,7 +203,7 @@ class _RecentlyPlayedPill extends StatelessWidget {
                         ),
                       ),
                       AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 280),
+                        duration: duration,
                         curve: Curves.easeInOut,
                         style:
                             Theme.of(context).textTheme.bodySmall?.copyWith(

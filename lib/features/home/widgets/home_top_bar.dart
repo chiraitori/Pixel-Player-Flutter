@@ -26,6 +26,7 @@ class HomeTopBar extends StatelessWidget {
         children: [
           const SizedBox(width: 16),
           FilledButton.tonal(
+            key: const ValueKey('home-beta'),
             onPressed: onOpenBeta,
             style: FilledButton.styleFrom(
               minimumSize: const Size(0, 40),

@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/models/song.dart';
@@ -127,9 +129,19 @@ class _DailyMixHeader extends StatelessWidget {
                       'DAILY MIX',
                       style: TextStyle(
                         fontFamily: 'GoogleSansFlex',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.2,
+                        fontSize: 20,
+                        height: 22 / 20,
+                        fontWeight: FontWeight.normal,
+                        letterSpacing: -.35,
+                        fontVariations: const [
+                          ui.FontVariation('wght', 630),
+                          ui.FontVariation('wdth', 136),
+                          ui.FontVariation('GRAD', 40),
+                          ui.FontVariation('ROND', 100),
+                          ui.FontVariation('XTRA', 520),
+                          ui.FontVariation('YOPQ', 90),
+                          ui.FontVariation('YTLC', 505),
+                        ],
                         color: colors.onPrimary,
                       ),
                     ),
