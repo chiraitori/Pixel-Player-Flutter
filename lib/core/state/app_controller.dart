@@ -1718,12 +1718,19 @@ class AppController extends ChangeNotifier {
     final existing = _audioPlayer;
     if (existing != null) return existing;
 
-    final equalizer = AndroidEqualizer();
-    final loudness = AndroidLoudnessEnhancer();
-    _equalizer = equalizer;
-    _loudnessEnhancer = loudness;
+    AndroidEqualizer? equalizer;
+    AndroidLoudnessEnhancer? loudness;
+    try {
+      equalizer = AndroidEqualizer();
+      loudness = AndroidLoudnessEnhancer();
+      _equalizer = equalizer;
+      _loudnessEnhancer = loudness;
+    } catch (_) {}
+
     final player = AudioPlayer(
-      audioPipeline: AudioPipeline(androidAudioEffects: [equalizer, loudness]),
+      audioPipeline: equalizer != null && loudness != null
+          ? AudioPipeline(androidAudioEffects: [equalizer, loudness])
+          : null,
     );
     _audioPlayer = player;
     _playerSubscriptions
@@ -1834,7 +1841,9 @@ class AppController extends ChangeNotifier {
         initialPosition: initialPosition,
         shuffleOrder: DefaultShuffleOrder(),
       );
-      await _applyEqualizerSettings();
+      try {
+        await _applyEqualizerSettings();
+      } catch (_) {}
       await player.setLoopMode(switch (repeatMode) {
         1 => LoopMode.one,
         2 => LoopMode.all,
@@ -1847,7 +1856,8 @@ class AppController extends ChangeNotifier {
       } else {
         await player.pause();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Error playing audio: $e');
       isPlaying = false;
       notifyListeners();
     }
@@ -1857,12 +1867,12 @@ class AppController extends ChangeNotifier {
     final equalizer = _equalizer;
     final loudness = _loudnessEnhancer;
     if (equalizer == null || loudness == null) return;
-    final enabled = boolSetting('equalizer_enabled', false);
-    await equalizer.setEnabled(enabled);
-    await loudness.setEnabled(enabled);
-    await loudness.setTargetGain(doubleSetting('equalizer_loudness', .35) * 12);
-    if (!enabled) return;
     try {
+      final enabled = boolSetting('equalizer_enabled', false);
+      await equalizer.setEnabled(enabled);
+      await loudness.setEnabled(enabled);
+      await loudness.setTargetGain(doubleSetting('equalizer_loudness', .35) * 12);
+      if (!enabled) return;
       final parameters = await equalizer.parameters;
       final desired = equalizerBands;
       for (var index = 0; index < parameters.bands.length; index++) {
