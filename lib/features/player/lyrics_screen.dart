@@ -328,13 +328,30 @@ class _LyricsScreenState extends State<LyricsScreen> {
     _lastActiveLine = active;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      final target = (active * 86.0 - 110).clamp(
-        0.0,
-        _scrollController.position.maxScrollExtent,
+      final controller = AppScope.of(context);
+      final showTranslation = controller.boolSetting(
+        'show_lyrics_translation',
+        true,
       );
+      final showRomanization = controller.boolSetting(
+        'show_lyrics_romanization',
+        true,
+      );
+      final hasExtraText =
+          (showTranslation &&
+              _lyrics.synced.any((l) => l.translation?.isNotEmpty == true)) ||
+          (showRomanization &&
+              _lyrics.synced.any((l) => l.romanization?.isNotEmpty == true));
+      final estimatedLineHeight = hasExtraText ? 68.0 : 54.0;
+      final viewportHeight = _scrollController.position.viewportDimension;
+      final target =
+          (active * estimatedLineHeight - (viewportHeight / 2) + 120.0).clamp(
+            0.0,
+            _scrollController.position.maxScrollExtent,
+          );
       _scrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 450),
+        duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
       );
     });
