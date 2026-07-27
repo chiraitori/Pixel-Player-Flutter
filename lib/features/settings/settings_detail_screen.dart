@@ -959,7 +959,7 @@ class _SettingsDetailScreenState extends State<SettingsDetailScreen> {
           'No Peek',
           Icons.view_carousel_outlined,
           settingId: 'carousel_style',
-          choices: ['No Peek', 'One Peek'],
+          choices: ['No Peek', 'One Peek', 'Two Peek'],
           description: 'Choose the appearance for the album carousel.',
         ),
       ]),

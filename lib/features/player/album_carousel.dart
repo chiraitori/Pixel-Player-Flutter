@@ -109,9 +109,10 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
   @override
   Widget build(BuildContext context) {
     if (widget.queue.isEmpty) return const SizedBox.shrink();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedScale(
       scale: widget.isPlaying ? 1 : .95,
-      duration: const Duration(milliseconds: 200),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
       curve: Curves.fastOutSlowIn,
       child: Listener(
         onPointerDown: (_) => _userDragActive = true,
@@ -144,7 +145,7 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
                         return Artwork(
                           colors: song.colors,
                           size: artworkSize,
-                          borderRadius: 18,
+                          borderRadius: 16,
                           iconSize: 82,
                           mediaStoreId: song.mediaStoreId,
                         );

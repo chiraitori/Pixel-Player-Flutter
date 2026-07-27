@@ -283,8 +283,8 @@ class _WavySliderPainter extends CustomPainter {
         interactingThumbHeight * interaction;
     final gap = 6.0 + (thumbWidth / 2 + 1.2 - 6.0) * interaction;
 
-    // 1. Draw Active Wave Track (stops cleanly before the thumb gap)
-    final activeEnd = math.max(start, thumbX - thumbWidth / 2 - gap);
+    // 1. Draw Active Wave Track (connects seamlessly to the thumb, amplitude tapers to 0)
+    final activeEnd = math.max(start, thumbX - thumbWidth / 2 + 1.0);
     if (activeEnd > start) {
       final activePaint = Paint()
         ..color = activeColor
@@ -295,9 +295,13 @@ class _WavySliderPainter extends CustomPainter {
       final path = Path();
       const step = 1.5;
       for (double x = start; x <= activeEnd; x += step) {
+        final distanceToEnd = activeEnd - x;
+        final taper = (distanceToEnd / wavelength).clamp(0.0, 1.0);
+        final currentAmp = amplitude * taper;
+
         final radians =
             ((x - start) / wavelength - wavePhase) * math.pi * 2;
-        final y = centerY + math.sin(radians) * amplitude;
+        final y = centerY + math.sin(radians) * currentAmp;
         if (x == start) {
           path.moveTo(x, y);
         } else {

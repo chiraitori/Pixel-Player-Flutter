@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -62,6 +64,9 @@ class FullPlayerTopBar extends StatelessWidget {
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: colors.onPrimaryContainer,
                         fontWeight: FontWeight.w600,
+                        fontVariations: const [
+                          ui.FontVariation('ROND', 100),
+                        ],
                       ),
                     ),
                   ),

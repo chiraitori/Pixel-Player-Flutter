@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -117,9 +118,10 @@ class _FullPlayerState extends State<FullPlayer> {
           )
         : Theme.of(context).colorScheme;
 
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return TweenAnimationBuilder<ColorScheme>(
       tween: _ColorSchemeTween(end: targetPlayerColors),
-      duration: const Duration(milliseconds: 360),
+      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 360),
       curve: Curves.fastOutSlowIn,
       builder: (context, playerColors, _) {
         final playerBackground = playerColors.primaryContainer;
@@ -521,6 +523,7 @@ class _FullPlayerState extends State<FullPlayer> {
 double _carouselFraction(AppController controller) {
   return switch (controller.stringSetting('carousel_style', 'No Peek')) {
     'One Peek' => .8,
+    'Two Peek' => .6,
     _ => 1,
   };
 }
@@ -548,31 +551,30 @@ class _PortraitPlayerContent extends StatelessWidget {
       builder: (context, constraints) {
         final contentWidth = (constraints.maxWidth - 48).clamp(0.0, 600.0);
         final carouselFraction = _carouselFraction(controller);
-        final heightForArtwork = constraints.hasBoundedHeight
-            ? (constraints.maxHeight - 352).clamp(120.0, contentWidth)
-            : contentWidth;
-        final carouselWidth = (heightForArtwork / carouselFraction).clamp(
-          120.0,
-          contentWidth,
-        );
+        // The Kotlin FullPlayerAlbumCoverSection always derives artwork from
+        // the available width; Column.SpaceAround allocates remaining height.
+        final carouselWidth = contentWidth;
         final carouselHeight = carouselWidth * carouselFraction;
         return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              SizedBox(
-                width: carouselWidth,
-                height: carouselHeight,
-                child: AlbumCarousel(
-                  currentSong: song,
-                  queue: controller.queue,
-                  isPlaying: controller.isPlaying,
-                  viewportFraction: carouselFraction,
-                  onArtworkTap: onAlbum,
-                  onSongSelected: (selected) => controller.playSong(
-                    selected,
-                    fromQueue: controller.queue,
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(
+                  width: carouselWidth,
+                  height: carouselHeight,
+                  child: AlbumCarousel(
+                    currentSong: song,
+                    queue: controller.queue,
+                    isPlaying: controller.isPlaying,
+                    viewportFraction: carouselFraction,
+                    onArtworkTap: onAlbum,
+                    onSongSelected: (selected) => controller.playSong(
+                      selected,
+                      fromQueue: controller.queue,
+                    ),
                   ),
                 ),
               ),
@@ -682,7 +684,7 @@ class _SongMetadata extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final chipColor = colors.onPrimary.withValues(alpha: .8);
     return SizedBox(
-      height: 68,
+      height: 70,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -700,6 +702,7 @@ class _SongMetadata extends StatelessWidget {
                       color: colors.onPrimaryContainer,
                       fontFamily: 'GoogleSansFlex',
                       fontWeight: FontWeight.bold,
+                      fontVariations: const [ui.FontVariation('ROND', 100)],
                     ),
                     gradientEdgeColor: colors.primaryContainer,
                     canScroll: controller.isPlaying,
@@ -714,6 +717,9 @@ class _SongMetadata extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium!.copyWith(
                         color: colors.onPrimaryContainer.withValues(alpha: .7),
                         letterSpacing: 0,
+                        fontVariations: const [
+                          ui.FontVariation('ROND', 100),
+                        ],
                       ),
                       gradientEdgeColor: colors.primaryContainer,
                       canScroll: controller.isPlaying,
@@ -885,6 +891,9 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                             color: colors.onPrimaryContainer,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
+                            fontVariations: const [
+                              ui.FontVariation('ROND', 100),
+                            ],
                           ),
                         ),
                         Text(
@@ -893,6 +902,9 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                             color: colors.onPrimaryContainer,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
+                            fontVariations: const [
+                              ui.FontVariation('ROND', 100),
+                            ],
                           ),
                         ),
                       ],
@@ -920,6 +932,9 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                             ),
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
+                            fontVariations: const [
+                              ui.FontVariation('ROND', 100),
+                            ],
                           ),
                         ),
                       ),
