@@ -997,35 +997,41 @@ class _PlayerControlsBlock extends StatelessWidget {
     if (song == null) return const SizedBox.shrink();
     final colors = Theme.of(context).colorScheme;
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: AnimatedPlaybackControls(
-            isPlaying: controller.isPlaying,
-            onPrevious: controller.skipPrevious,
-            onPlayPause: controller.togglePlayPause,
-            onNext: controller.skipNext,
-            colorPrevious: colors.primary,
-            colorPlayPause: colors.tertiaryFixedDim,
-            colorNext: colors.primary,
-            tintPrevious: colors.onPrimary,
-            tintPlayPause: colors.onTertiaryFixed,
-            tintNext: colors.onPrimary,
-            height: 72,
+    return SizedBox(
+      height: 182,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: AnimatedPlaybackControls(
+              isPlaying: controller.isPlaying,
+              onPrevious: controller.skipPrevious,
+              onPlayPause: controller.togglePlayPause,
+              onNext: controller.skipNext,
+              colorPrevious: colors.secondaryFixedDim,
+              colorPlayPause: colors.tertiaryFixedDim,
+              colorNext: colors.secondaryFixedDim,
+              tintPrevious: colors.onSecondaryFixed,
+              tintPlayPause: colors.onTertiaryFixed,
+              tintNext: colors.onSecondaryFixed,
+              height: 80,
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        BottomToggleRow(
-          shuffleEnabled: controller.shuffleEnabled,
-          repeatMode: controller.repeatMode,
-          favorite: controller.isFavorite(song),
-          onShuffle: controller.toggleShuffle,
-          onRepeat: controller.cycleRepeatMode,
-          onFavorite: controller.toggleFavorite,
-        ),
-      ],
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 72,
+            child: BottomToggleRow(
+              shuffleEnabled: controller.shuffleEnabled,
+              repeatMode: controller.repeatMode,
+              favorite: controller.isFavorite(song),
+              onShuffle: controller.toggleShuffle,
+              onRepeat: controller.cycleRepeatMode,
+              onFavorite: controller.toggleFavorite,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

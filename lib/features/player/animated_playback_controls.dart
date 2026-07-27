@@ -107,8 +107,8 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
   }
 
   double _weight(_PlaybackButtonType button) {
-    if (_lastClicked == null) return 1;
-    return _lastClicked == button ? 1.1 : .65;
+    if (_lastClicked == null) return 1.0;
+    return _lastClicked == button ? 1.25 : 0.85;
   }
 
   @override
