@@ -10,7 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   archive: ^4.0.9
-  file_picker: ^11.0.2
+  file_picker: ^12.0.0-beta.7
   flutter_chrome_cast: ^1.4.6
   permission_handler: ^12.0.3
   shared_preferences: ^2.5.5
@@ -20,7 +20,7 @@ dependencies:
   just_audio: ^0.10.6
   dynamic_color: ^1.8.1
   flutter_svg: ^2.3.0
-  device_info_plus: ^12.4.0
+  device_info_plus: ^13.2.0
   url_launcher: ^6.3.2
   id3: ^1.0.2
   just_audio_background: ^0.0.1-beta.17
@@ -29,11 +29,11 @@ dependencies:
   material_color_utilities: ^0.13.0
   palette_generator: ^0.3.3+3
   google_sign_in: ^7.2.0
-  wakelock_plus: ^1.5.2
+  wakelock_plus: ^1.7.0
   xml: ^6.6.1
   flutter_taglib: ^1.4.1
   romanize: ^0.0.3
-  share_plus: ^12.0.2
+  share_plus: ^13.3.0
 
 
 dev_dependencies:
