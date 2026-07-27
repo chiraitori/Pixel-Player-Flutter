@@ -50,11 +50,7 @@ class AppShell extends StatelessWidget {
       'appearance_smooth_corners',
       true,
     );
-    final navBarTopRadius =
-        controller.navBarStyle == PixelNavBarStyle.floating &&
-            controller.currentSong != null
-        ? 10.0
-        : controller.navBarCornerRadius;
+    final navBarTopRadius = controller.navBarCornerRadius;
     final navBarBottomRadius =
         controller.navBarStyle == PixelNavBarStyle.fullWidth
         ? 0.0

@@ -175,14 +175,7 @@ class _MiniPlayerState extends State<MiniPlayer>
         : systemInset > 30
         ? 14.0
         : systemInset;
-    final topRadius = 32.0;
-    final bottomRadius = controller.navBarStyle == PixelNavBarStyle.fullWidth
-        ? 32.0
-        : (widget.isStandalone ? controller.navBarCornerRadius : 10.0);
-    final miniPlayerBorderRadius = BorderRadius.vertical(
-      top: Radius.circular(topRadius),
-      bottom: Radius.circular(bottomRadius),
-    );
+    final miniPlayerBorderRadius = BorderRadius.circular(32.0);
     final useSmoothCorners = controller.boolSetting(
       'appearance_smooth_corners',
       true,
