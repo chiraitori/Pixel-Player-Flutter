@@ -2630,12 +2630,11 @@ Future<LyricsDocument?> _pickLyricsFile(
   BuildContext? context,
 }) async {
   try {
-    final result = await FilePicker.pickFiles(
+    final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const <String>['lrc', 'ttml'],
-      allowMultiple: false,
     );
-    final path = result?.files.single.path;
+    final path = file?.path;
     if (path == null) return null;
     return await LyricsService.instance.importLyricsFile(song, File(path));
   } on FormatException catch (error) {

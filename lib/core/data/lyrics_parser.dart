@@ -145,14 +145,14 @@ class LyricsParser {
       final rows = <({Duration time, String row})>[];
       for (final paragraph in paragraphs) {
         var time = _parseTtmlTime(
-          paragraph.getAttribute('begin', namespace: '*') ?? '',
+          paragraph.getAttribute('begin', namespaceUri: '*') ?? '',
         );
         if (time == null) {
           for (final span in paragraph.descendantElements.where(
             (element) => element.name.local.toLowerCase() == 'span',
           )) {
             time = _parseTtmlTime(
-              span.getAttribute('begin', namespace: '*') ?? '',
+              span.getAttribute('begin', namespaceUri: '*') ?? '',
             );
             if (time != null) break;
           }
@@ -185,7 +185,7 @@ class LyricsParser {
     final normalized = _normalizeTtmlInline(content);
     if (normalized.isEmpty) return '';
     final begin = _parseTtmlTime(
-      node.getAttribute('begin', namespace: '*') ?? '',
+      node.getAttribute('begin', namespaceUri: '*') ?? '',
     );
     return begin == null
         ? normalized
