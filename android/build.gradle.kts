@@ -16,6 +16,7 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
     pluginManager.withPlugin("com.android.library") {
         extensions.configure<com.android.build.gradle.LibraryExtension> {
+            compileSdk = 35
             buildToolsVersion = "36.0.0"
             if (namespace == null) {
                 namespace = when (project.name) {
