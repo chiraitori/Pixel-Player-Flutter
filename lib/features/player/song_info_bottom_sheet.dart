@@ -178,10 +178,12 @@ class _SongActionsPage extends StatelessWidget {
             Row(
               children: [
                 Expanded(
+                  flex: 2,
                   child: _ActionButton(
                     icon: Icons.play_arrow_rounded,
                     label: 'Play',
                     primary: true,
+                    height: 80,
                     onTap: () {
                       controller.playSong(song, fromQueue: controller.queue);
                       Navigator.pop(context);
@@ -195,6 +197,8 @@ class _SongActionsPage extends StatelessWidget {
                         ? Icons.favorite_rounded
                         : Icons.favorite_border_rounded,
                     label: 'Favorite',
+                    iconOnly: true,
+                    height: 80,
                     onTap: () => controller.toggleFavoriteFor(song),
                   ),
                 ),
@@ -203,6 +207,8 @@ class _SongActionsPage extends StatelessWidget {
                   child: _ActionButton(
                     icon: Icons.share_rounded,
                     label: 'Share',
+                    iconOnly: true,
+                    height: 80,
                     onTap: () => unawaited(_shareSong(context)),
                   ),
                 ),
@@ -229,17 +235,36 @@ class _SongActionsPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 10),
-            _ActionButton(
-              icon: Icons.playlist_add_rounded,
-              label: 'Add to playlist',
-              wide: true,
-              onTap: () => _showPlaylistPicker(context),
+            Row(
+              children: [
+                Expanded(
+                  child: _ActionButton(
+                    icon: Icons.playlist_add_rounded,
+                    label: 'Playlist',
+                    wide: true,
+                    secondary: true,
+                    height: 66,
+                    onTap: () => _showPlaylistPicker(context),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ActionButton(
+                    icon: Icons.delete_forever_rounded,
+                    label: 'Delete',
+                    wide: true,
+                    error: true,
+                    height: 66,
+                    onTap: () => unawaited(_deleteFromDevice(context)),
+                  ),
+                ),
+              ],
             ),
             if (!Platform.isIOS) ...[
               const SizedBox(height: 10),
               _ActionButton(
                 icon: Icons.notifications_active_outlined,
-                label: 'Set as ringtone',
+                label: 'Set as sound',
                 wide: true,
                 onTap: () => unawaited(_setRingtone(context)),
               ),
@@ -270,6 +295,62 @@ class _SongActionsPage extends StatelessWidget {
         title: song.title,
         subject: song.title,
         files: fileExists ? [XFile(localPath)] : null,
+      ),
+    );
+  }
+
+  Future<void> _deleteFromDevice(BuildContext context) async {
+    if (song.source != SongSource.local || song.contentUri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Only local MediaStore songs can be deleted.'),
+        ),
+      );
+      return;
+    }
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.delete_forever_rounded),
+        title: const Text('Delete song?'),
+        content: Text('Delete “${song.title}” from this device?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true || !context.mounted) return;
+    final response =
+        await const MethodChannel(
+          'com.chiraitori.pixelplay/device_capabilities',
+        ).invokeMapMethod<String, dynamic>('deleteMediaStoreAudio', {
+          'uri': song.contentUri,
+        });
+    if (!context.mounted) return;
+    final status = response?['status'];
+    if (status == 'success') {
+      await controller.refreshLibrary();
+      if (context.mounted) Navigator.pop(context);
+      return;
+    }
+    if (status == 'cancelled') return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          response?['message']?.toString() ??
+              'The audio file could not be deleted.',
+        ),
       ),
     );
   }
@@ -583,6 +664,10 @@ class _ActionButton extends StatelessWidget {
     required this.onTap,
     this.primary = false,
     this.wide = false,
+    this.iconOnly = false,
+    this.height = 74,
+    this.secondary = false,
+    this.error = false,
   });
 
   final IconData icon;
@@ -590,14 +675,32 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool primary;
   final bool wide;
+  final bool iconOnly;
+  final double height;
+  final bool secondary;
+  final bool error;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final backgroundColor = error
+        ? colors.errorContainer
+        : secondary
+        ? colors.secondaryContainer
+        : primary
+        ? colors.primary
+        : colors.surfaceContainerHigh;
+    final foregroundColor = error
+        ? colors.onErrorContainer
+        : secondary
+        ? colors.onSecondaryContainer
+        : primary
+        ? colors.onPrimary
+        : colors.onSurface;
     return SizedBox(
-      height: 74,
+      height: height,
       child: Material(
-        color: primary ? colors.primary : colors.surfaceContainerHigh,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(wide ? 24 : 26),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -605,14 +708,16 @@ class _ActionButton extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, color: primary ? colors.onPrimary : colors.onSurface),
-              if (wide) ...[
+              Icon(icon, color: foregroundColor),
+              if (iconOnly)
+                const SizedBox.shrink()
+              else if (wide) ...[
                 const SizedBox(width: 12),
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: primary ? colors.onPrimary : colors.onSurface,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleMedium?.copyWith(color: foregroundColor),
                 ),
               ] else ...[
                 const SizedBox(width: 8),
@@ -620,9 +725,9 @@ class _ActionButton extends StatelessWidget {
                   child: Text(
                     label,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: primary ? colors.onPrimary : colors.onSurface,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelLarge?.copyWith(color: foregroundColor),
                   ),
                 ),
               ],

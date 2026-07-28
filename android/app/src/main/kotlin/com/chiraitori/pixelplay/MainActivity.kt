@@ -1,6 +1,7 @@
 package com.chiraitori.pixelplay
 
 import android.Manifest
+import android.app.Activity
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.annotation.SuppressLint
@@ -31,6 +32,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.provider.MediaStore
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -42,6 +44,11 @@ class MainActivity : AudioServiceActivity() {
     private val discoveredBluetoothAudioDevices = linkedMapOf<String, BluetoothAudioRoute>()
     private var bluetoothDeviceEventSink: EventChannel.EventSink? = null
     private var bluetoothReceiverRegistered = false
+    private var pendingMediaDeleteResult: MethodChannel.Result? = null
+
+    private companion object {
+        const val MEDIA_DELETE_REQUEST_CODE = 4107
+    }
 
     private val bluetoothDeviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -145,6 +152,67 @@ class MainActivity : AudioServiceActivity() {
                         )
                     }
                 }
+                "deleteMediaStoreAudio" -> {
+                    val uriValue = call.argument<String>("uri")
+                    if (uriValue.isNullOrBlank()) {
+                        result.success(
+                            mapOf(
+                                "status" to "error",
+                                "message" to "This track is not a local MediaStore item.",
+                            ),
+                        )
+                        return@setMethodCallHandler
+                    }
+                    val uri = Uri.parse(uriValue)
+                    if (uri.scheme != "content" || uri.authority != MediaStore.AUTHORITY) {
+                        result.success(
+                            mapOf(
+                                "status" to "error",
+                                "message" to "Only MediaStore audio can be deleted from PixelPlay.",
+                            ),
+                        )
+                        return@setMethodCallHandler
+                    }
+                    if (pendingMediaDeleteResult != null) {
+                        result.success(
+                            mapOf(
+                                "status" to "busy",
+                                "message" to "Another delete confirmation is already open.",
+                            ),
+                        )
+                        return@setMethodCallHandler
+                    }
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            pendingMediaDeleteResult = result
+                            val request = MediaStore.createDeleteRequest(contentResolver, listOf(uri))
+                            startIntentSenderForResult(
+                                request.intentSender,
+                                MEDIA_DELETE_REQUEST_CODE,
+                                null,
+                                0,
+                                0,
+                                0,
+                            )
+                        } else {
+                            val deleted = contentResolver.delete(uri, null, null)
+                            result.success(
+                                mapOf(
+                                    "status" to if (deleted > 0) "success" else "error",
+                                    "message" to if (deleted > 0) null else "The audio file could not be deleted.",
+                                ),
+                            )
+                        }
+                    } catch (error: Exception) {
+                        pendingMediaDeleteResult = null
+                        result.success(
+                            mapOf(
+                                "status" to "error",
+                                "message" to (error.localizedMessage ?: "The audio file could not be deleted."),
+                            ),
+                        )
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
@@ -189,6 +257,20 @@ class MainActivity : AudioServiceActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != MEDIA_DELETE_REQUEST_CODE) return
+        val result = pendingMediaDeleteResult ?: return
+        pendingMediaDeleteResult = null
+        result.success(
+            mapOf(
+                "status" to if (resultCode == Activity.RESULT_OK) "success" else "cancelled",
+                "message" to if (resultCode == Activity.RESULT_OK) null else "Delete was cancelled.",
+            ),
+        )
     }
 
     /**

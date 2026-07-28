@@ -44,6 +44,14 @@ void main() {
     for (final song in album.songs) {
       expect(find.text(song.title), findsOneWidget);
     }
+
+    await tester.tap(
+      find.byTooltip('More options for ${album.songs.first.title}'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Options'), findsOneWidget);
+    expect(find.text('Info'), findsOneWidget);
+    expect(find.text('Song information'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

@@ -428,6 +428,12 @@ class _AlbumSongTile extends StatelessWidget {
   }
 
   void _showSongOptions(BuildContext context) {
+    // Kotlin's AlbumDetailScreen routes the row's ⋮ straight to
+    // SongInfoBottomSheet rather than presenting an intermediate ListTile menu.
+    if (context.mounted) {
+      showSongInfoBottomSheet(context: context, song: song);
+      return;
+    }
     final controller = AppScope.of(context);
     showModalBottomSheet<void>(
       context: context,

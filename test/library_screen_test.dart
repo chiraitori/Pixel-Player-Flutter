@@ -126,6 +126,232 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Playlists exposes the Kotlin M3U import action', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AppController(setupComplete: true)
+      ..songs = MockLibrary.songs
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('library-section-segment')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Playlists').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('New'), findsOneWidget);
+    expect(find.text('Import'), findsOneWidget);
+  });
+
+  testWidgets('Library sort sheet keeps the Kotlin direction toggle', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AppController(setupComplete: true)
+      ..songs = MockLibrary.songs
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.sort_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ascending'), findsOneWidget);
+    await tester.tap(find.text('Ascending'));
+    await tester.pump();
+    expect(find.text('Descending'), findsOneWidget);
+  });
+
+  testWidgets('song selection exposes the Kotlin share action', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AppController(setupComplete: true)
+      ..songs = MockLibrary.songs
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.longPress(find.text(MockLibrary.songs.first.title));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.more_horiz_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Share selected'), findsOneWidget);
+  });
+
+  testWidgets('Folder playlist view stays synced with Kotlin sort controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final folderSong = MockLibrary.songs.first.copyWith();
+    final controller = AppController(setupComplete: true)
+      ..songs = [
+        Song(
+          id: folderSong.id,
+          title: folderSong.title,
+          artist: folderSong.artist,
+          album: folderSong.album,
+          genre: folderSong.genre,
+          duration: folderSong.duration,
+          colors: folderSong.colors,
+          path: '/Music/Anime/${folderSong.title}.flac',
+        ),
+      ]
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('library-section-segment')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Folders').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.sort_rounded));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Playlist view'), findsOneWidget);
+    expect(find.text('Name'), findsOneWidget);
+    expect(find.text('Song count'), findsOneWidget);
+    await tester.drag(
+      find.byType(SingleChildScrollView).last,
+      const Offset(0, -260),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(GridView), findsOneWidget);
+  });
+
+  testWidgets('Folder navigation renders its Kotlin action-row breadcrumb', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = AppController(setupComplete: true)
+      ..songs = [
+        const Song(
+          id: 'folder-song',
+          title: 'Inside',
+          artist: 'Robin',
+          album: 'Inside',
+          genre: 'Pop',
+          duration: Duration(minutes: 3),
+          colors: [Colors.purple],
+          path: '/Music/Anime/Inside.flac',
+        ),
+      ]
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('library-section-segment')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Folders').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('folder-breadcrumb')), findsOneWidget);
+  });
+
   testWidgets('album Grid and List controls live in the Kotlin sort sheet', (
     tester,
   ) async {
@@ -255,15 +481,54 @@ void main() {
     await tester.ensureVisible(find.text('Folders').last);
     await tester.tap(find.text('Folders').last);
     await tester.pumpAndSettle();
+    expect(find.text('Music'), findsOneWidget);
     await tester.tap(find.text('Music'));
     await tester.pumpAndSettle();
-    expect(find.text('Back'), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-breadcrumb')), findsOneWidget);
     expect(find.text('Anime'), findsOneWidget);
     await tester.tap(find.text('Anime'));
     await tester.pumpAndSettle();
     expect(find.text(source.title), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'song three-dot opens the Kotlin expressive song sheet directly',
+    (tester) async {
+      final controller = AppController(setupComplete: true)
+        ..songs = MockLibrary.songs
+        ..libraryLoading = false
+        ..libraryCompactMode = true;
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        AppScope(
+          controller: controller,
+          child: MaterialApp(
+            home: Scaffold(
+              body: LibraryScreen(
+                onOpenSettings: () {},
+                onOpenAlbum: (_) {},
+                onOpenArtist: (_) {},
+                onOpenPlaylist: (_) {},
+                onOpenGenre: (_) {},
+                onCreatePlaylist: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byTooltip('More options for Afterglow'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Options'), findsOneWidget);
+      expect(find.text('Info'), findsOneWidget);
+      expect(find.text('Play'), findsOneWidget);
+      expect(find.text('Song information'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'compact Library fits landscape with reduced motion and 1.3x text',

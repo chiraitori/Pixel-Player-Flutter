@@ -984,10 +984,12 @@ class AppController extends ChangeNotifier {
   }) {
     final cleanName = name.trim().isEmpty ? 'New playlist' : name.trim();
     final selectedIds = smartRule == null
-        ? songIds.toSet()
-        : _smartPlaylistSongIds(smartRule, limit: 50).toSet();
-    final selectedSongs = songs
-        .where((song) => selectedIds.contains(song.id))
+        ? songIds.toList(growable: false)
+        : _smartPlaylistSongIds(smartRule, limit: 50);
+    final songsById = {for (final song in songs) song.id: song};
+    final selectedSongs = selectedIds
+        .map((id) => songsById[id])
+        .whereType<Song>()
         .toList(growable: false);
     playlists = [
       ...playlists,

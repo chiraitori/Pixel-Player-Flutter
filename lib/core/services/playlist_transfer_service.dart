@@ -8,9 +8,77 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/song.dart';
 
+/// The import result produced by PixelPlayer's M3U parser before the playlist
+/// is persisted. Keeping IDs (rather than Song objects) preserves the order
+/// written by the playlist file.
+class ImportedM3uPlaylist {
+  const ImportedM3uPlaylist({required this.name, required this.songIds});
+
+  final String name;
+  final List<String> songIds;
+}
+
 /// M3U export/share counterpart of PixelPlayer's `M3uManager` and playlist
 /// batch actions in `PlaylistViewModel`.
 abstract final class PlaylistTransferService {
+  /// Ports `M3uManager.parseM3u` from the Kotlin app.
+  ///
+  /// Each non-comment line first matches a local path exactly, then falls back
+  /// to the filename in the local path or media content URI. This intentionally
+  /// keeps the M3U file's order and ignores unmatched entries.
+  static ImportedM3uPlaylist parseM3u(
+    String contents, {
+    required String fileName,
+    required Iterable<Song> library,
+  }) {
+    const fallbackName = 'Imported Playlist';
+    final songs = library.toList(growable: false);
+    final songsByPath = <String, Song>{
+      for (final song in songs)
+        if (song.path != null && song.path!.isNotEmpty) song.path!: song,
+    };
+    final songsByPathFileName = <String, List<Song>>{};
+    final songsByContentUriFileName = <String, List<Song>>{};
+    for (final song in songs) {
+      final path = song.path;
+      if (path != null && path.isNotEmpty) {
+        (songsByPathFileName[_fileName(path)] ??= <Song>[]).add(song);
+      }
+      final contentUri = song.contentUri;
+      if (contentUri != null && contentUri.isNotEmpty) {
+        (songsByContentUriFileName[_fileName(contentUri)] ??= <Song>[]).add(
+          song,
+        );
+      }
+    }
+
+    final songIds = <String>[];
+    for (final rawLine in const LineSplitter().convert(contents)) {
+      final line = rawLine.trim();
+      if (line.isEmpty || line.startsWith('#')) continue;
+      final exact = songsByPath[line];
+      final matched =
+          exact ??
+          songsByPathFileName[_fileName(line)]?.first ??
+          songsByContentUriFileName[_fileName(line)]?.first;
+      if (matched != null) songIds.add(matched.id);
+    }
+
+    final playlistName = fileName
+        .replaceFirst(RegExp(r'\.m3u8$', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'\.m3u$', caseSensitive: false), '')
+        .trim();
+    return ImportedM3uPlaylist(
+      name: playlistName.isEmpty ? fallbackName : playlistName,
+      songIds: List.unmodifiable(songIds),
+    );
+  }
+
+  static String _fileName(String value) {
+    final slashIndex = value.lastIndexOf('/');
+    return slashIndex == -1 ? value : value.substring(slashIndex + 1);
+  }
+
   static Future<int?> exportPlaylists(List<Playlist> playlists) async {
     final directoryPath = await FilePicker.getDirectoryPath(
       dialogTitle: 'Export playlists',
