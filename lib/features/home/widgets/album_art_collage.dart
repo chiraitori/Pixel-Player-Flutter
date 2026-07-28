@@ -28,7 +28,10 @@ class AlbumArtCollage extends StatefulWidget {
     required this.songs,
     required this.onSongTap,
     this.height = 400,
-    this.padding = 14,
+    // Compose's AlbumArtCollage defaults to zero inset. Home owns the outer
+    // rhythm; adding 14dp here made every artwork composition smaller than
+    // the Kotlin source.
+    this.padding = 0,
     this.pattern = CollagePattern.cosmicSwirl,
     this.autoRotate = false,
     super.key,
@@ -74,11 +77,13 @@ class _AlbumArtCollageState extends State<AlbumArtCollage> {
   @override
   Widget build(BuildContext context) {
     if (widget.songs.isEmpty) return const SizedBox.shrink();
-    final songs = List<Song>.generate(
-      6,
-      (index) => widget.songs[index % widget.songs.length],
-      growable: false,
-    );
+    // Kotlin fills the six layout slots with nulls rather than duplicating
+    // cover art. This keeps a small library visually honest and preserves the
+    // intended negative space of each expressive collage pattern.
+    final songs = <Song?>[
+      ...widget.songs.take(6),
+      ...List<Song?>.filled((6 - widget.songs.length).clamp(0, 6), null),
+    ];
     return SizedBox(
       height: widget.height,
       width: double.infinity,
@@ -106,7 +111,10 @@ class _AlbumArtCollageState extends State<AlbumArtCollage> {
                         _CollageTile(
                           song: songs[index],
                           config: configs[index],
-                          onTap: () => widget.onSongTap(songs[index]),
+                          onTap: () {
+                            final song = songs[index];
+                            if (song != null) widget.onSongTap(song);
+                          },
                         ),
                     ],
                   ),
@@ -121,7 +129,10 @@ class _AlbumArtCollageState extends State<AlbumArtCollage> {
                         _CollageTile(
                           song: songs[index],
                           config: configs[index],
-                          onTap: () => widget.onSongTap(songs[index]),
+                          onTap: () {
+                            final song = songs[index];
+                            if (song != null) widget.onSongTap(song);
+                          },
                         ),
                     ],
                   ),
@@ -142,12 +153,14 @@ class _CollageTile extends StatelessWidget {
     required this.onTap,
   });
 
-  final Song song;
+  final Song? song;
   final _CollageConfig config;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final song = this.song;
+    if (song == null) return const SizedBox.shrink();
     Widget image = Artwork(
       colors: song.colors,
       mediaStoreId: song.mediaStoreId,

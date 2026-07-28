@@ -65,9 +65,7 @@ class FullPlayerTopBar extends StatelessWidget {
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: colors.onPrimaryContainer,
                         fontWeight: FontWeight.w600,
-                        fontVariations: const [
-                          ui.FontVariation('ROND', 100),
-                        ],
+                        fontVariations: const [ui.FontVariation('ROND', 100)],
                       ),
                     ),
                   ),

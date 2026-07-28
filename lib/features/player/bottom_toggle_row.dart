@@ -22,11 +22,14 @@ class BottomToggleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final colors = Theme.of(context).colorScheme;
-    final containerBg = colors.surfaceContainer;
-    final inactiveBg = colors.surfaceContainerHighest;
-    final inactiveIconColor = colors.onSurfaceVariant;
+    // FullPlayerContent.kt uses its private expressive toggle-row palette,
+    // rather than the similarly named reusable BottomToggleRow.kt defaults.
+    final containerBg = colors.surfaceContainerLowest.withValues(alpha: .7);
+    final inactiveBg = colors.onSurface.withValues(alpha: .07);
+    final inactiveIconColor = colors.onSurface;
 
     return Container(
+      key: const ValueKey('player-toggle-container'),
       height: 72,
       decoration: ShapeDecoration(
         color: containerBg,
@@ -34,53 +37,56 @@ class BottomToggleRow extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(6),
         child: ClipPath(
           clipper: const ShapeBorderClipper(shape: StadiumBorder()),
           child: Row(
             children: [
               Expanded(
                 child: _ToggleSegment(
+                  key: const ValueKey('player-toggle-shuffle'),
                   active: shuffleEnabled,
-                  activeColor: colors.primary,
-                  activeContentColor: colors.onPrimary,
+                  activeColor: colors.primaryFixed,
+                  activeContentColor: colors.onPrimaryFixed,
                   inactiveColor: inactiveBg,
                   inactiveContentColor: inactiveIconColor,
-              icon: Icons.shuffle_rounded,
-              label: 'Shuffle',
-              reduceMotion: reduceMotion,
+                  icon: Icons.shuffle_rounded,
+                  label: 'Shuffle',
+                  reduceMotion: reduceMotion,
                   onTap: onShuffle,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 child: _ToggleSegment(
+                  key: const ValueKey('player-toggle-repeat'),
                   active: repeatMode != 0,
-                  activeColor: colors.secondary,
-                  activeContentColor: colors.onSecondary,
+                  activeColor: colors.secondaryFixed,
+                  activeContentColor: colors.onSecondaryFixed,
                   inactiveColor: inactiveBg,
                   inactiveContentColor: inactiveIconColor,
-              icon: repeatMode == 1
-                  ? Icons.repeat_one_rounded
-                  : Icons.repeat_rounded,
-              label: 'Repeat',
-              reduceMotion: reduceMotion,
+                  icon: repeatMode == 1
+                      ? Icons.repeat_one_rounded
+                      : Icons.repeat_rounded,
+                  label: 'Repeat',
+                  reduceMotion: reduceMotion,
                   onTap: onRepeat,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
                 child: _ToggleSegment(
+                  key: const ValueKey('player-toggle-favorite'),
                   active: favorite,
-                  activeColor: colors.tertiary,
-                  activeContentColor: colors.onTertiary,
+                  activeColor: colors.tertiaryFixed,
+                  activeContentColor: colors.onTertiaryFixed,
                   inactiveColor: inactiveBg,
                   inactiveContentColor: inactiveIconColor,
-              icon: favorite
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              label: 'Favorite',
-              reduceMotion: reduceMotion,
+                  icon: favorite
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  label: 'Favorite',
+                  reduceMotion: reduceMotion,
                   onTap: onFavorite,
                 ),
               ),
@@ -103,6 +109,7 @@ class _ToggleSegment extends StatelessWidget {
     required this.label,
     required this.reduceMotion,
     required this.onTap,
+    super.key,
   });
 
   final bool active;
@@ -118,7 +125,9 @@ class _ToggleSegment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 250),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 250),
       curve: Curves.fastOutSlowIn,
       decoration: BoxDecoration(
         color: active ? activeColor : inactiveColor,

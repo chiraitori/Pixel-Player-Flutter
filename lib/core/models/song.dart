@@ -150,6 +150,9 @@ class Playlist {
     required this.name,
     required this.songs,
     this.coverPath,
+    this.coverImageScale = 1,
+    this.coverImagePanX = 0,
+    this.coverImagePanY = 0,
     this.coverColorValue,
     this.coverIconName,
     this.coverShape = 'smoothRect',
@@ -163,6 +166,9 @@ class Playlist {
   final String name;
   final List<Song> songs;
   final String? coverPath;
+  final double coverImageScale;
+  final double coverImagePanX;
+  final double coverImagePanY;
   final int? coverColorValue;
   final String? coverIconName;
   final String coverShape;
@@ -175,6 +181,9 @@ class Playlist {
     String? name,
     List<Song>? songs,
     String? coverPath,
+    double? coverImageScale,
+    double? coverImagePanX,
+    double? coverImagePanY,
     int? coverColorValue,
     String? coverIconName,
     String? coverShape,
@@ -188,6 +197,9 @@ class Playlist {
       name: name ?? this.name,
       songs: songs ?? this.songs,
       coverPath: coverPath ?? this.coverPath,
+      coverImageScale: coverImageScale ?? this.coverImageScale,
+      coverImagePanX: coverImagePanX ?? this.coverImagePanX,
+      coverImagePanY: coverImagePanY ?? this.coverImagePanY,
       coverColorValue: coverColorValue ?? this.coverColorValue,
       coverIconName: coverIconName ?? this.coverIconName,
       coverShape: coverShape ?? this.coverShape,

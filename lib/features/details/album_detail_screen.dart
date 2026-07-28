@@ -7,6 +7,7 @@ import '../../core/theme/pixelplay_theme.dart';
 import '../../core/theme/rounded_star_clipper.dart';
 import '../../features/player/full_player.dart';
 import '../../features/player/mini_player.dart';
+import '../../features/player/song_info_bottom_sheet.dart';
 import '../../shared/widgets/artwork.dart';
 
 class AlbumDetailScreen extends StatelessWidget {
@@ -499,6 +500,10 @@ class _AlbumSongTile extends StatelessWidget {
               ListTile(
                 leading: Icon(Icons.info_outline_rounded),
                 title: Text('Song information'),
+                onTap: () {
+                  Navigator.pop(context);
+                  showSongInfoBottomSheet(context: context, song: song);
+                },
                 subtitle: Text(
                   '${song.durationLabel} • ${song.year} • Track ${song.track}',
                 ),

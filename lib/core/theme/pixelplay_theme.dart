@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +9,12 @@ import 'package:material_color_utilities/palettes/tonal_palette.dart';
 import 'pixelplay_colors.dart';
 
 abstract final class PixelPlayTheme {
+  // `GoogleSansRounded` in Kotlin is the same bundled Google Sans Flex file
+  // with its ROND variable axis pinned at 100 for every Material text role.
+  // Flutter otherwise uses the font's raw default axis, which makes the
+  // global typography visibly less rounded than the Compose app.
+  static const _roundedFlex = <ui.FontVariation>[ui.FontVariation('ROND', 100)];
+
   static ThemeData light({ColorScheme? scheme}) => _build(
     scheme != null ? _harmonize(scheme) : _fallbackScheme(Brightness.light),
   );
@@ -93,87 +101,123 @@ abstract final class PixelPlayTheme {
       textTheme: base.textTheme.copyWith(
         displayLarge: const TextStyle(
           fontFamily: family,
-          fontSize: 64,
-          height: 1.1,
-          fontWeight: FontWeight.w800,
-          letterSpacing: -1.0,
+          fontSize: 48,
+          height: 56 / 48,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         displayMedium: const TextStyle(
           fontFamily: family,
-          fontSize: 44,
-          height: 1.15,
+          fontSize: 36,
+          height: 44 / 36,
           fontWeight: FontWeight.w700,
-          letterSpacing: -.5,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         displaySmall: const TextStyle(
           fontFamily: family,
-          fontSize: 36,
-          height: 1.2,
-          fontWeight: FontWeight.w700,
+          fontSize: 30,
+          height: 38 / 30,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         headlineLarge: const TextStyle(
           fontFamily: family,
           fontSize: 32,
-          height: 1.25,
-          fontWeight: FontWeight.w700,
+          height: 40 / 32,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         headlineMedium: const TextStyle(
           fontFamily: family,
           fontSize: 28,
           height: 36 / 28,
           fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         headlineSmall: const TextStyle(
           fontFamily: family,
           fontSize: 24,
           height: 32 / 24,
           fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         titleLarge: const TextStyle(
           fontFamily: family,
           fontSize: 22,
           height: 28 / 22,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w400,
+          letterSpacing: 0,
+          fontVariations: _roundedFlex,
         ),
         titleMedium: const TextStyle(
           fontFamily: family,
           fontSize: 18,
           height: 24 / 18,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           letterSpacing: .15,
+          fontVariations: _roundedFlex,
         ),
         titleSmall: const TextStyle(
           fontFamily: family,
           fontSize: 14,
           height: 20 / 14,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w500,
           letterSpacing: .1,
+          fontVariations: _roundedFlex,
         ),
         bodyLarge: const TextStyle(
           fontFamily: family,
           fontSize: 16,
-          height: 1.5,
-          letterSpacing: .15,
+          height: 24 / 16,
+          fontWeight: FontWeight.w400,
+          letterSpacing: .5,
+          fontVariations: _roundedFlex,
         ),
         bodyMedium: const TextStyle(
           fontFamily: family,
           fontSize: 14,
           height: 20 / 14,
           letterSpacing: .25,
+          fontWeight: FontWeight.w400,
+          fontVariations: _roundedFlex,
         ),
-        labelLarge: const TextStyle(
-          fontFamily: family,
-          fontSize: 14,
-          height: 20 / 14,
-          fontWeight: FontWeight.w700,
-          letterSpacing: .1,
-        ),
-        labelMedium: const TextStyle(
+        bodySmall: const TextStyle(
           fontFamily: family,
           fontSize: 12,
           height: 16 / 12,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w400,
+          letterSpacing: .4,
+          fontVariations: _roundedFlex,
+        ),
+        labelLarge: const TextStyle(
+          fontFamily: family,
+          fontSize: 16,
+          height: 20 / 16,
+          fontWeight: FontWeight.w500,
+          letterSpacing: .1,
+          fontVariations: _roundedFlex,
+        ),
+        labelMedium: const TextStyle(
+          fontFamily: family,
+          fontSize: 14,
+          height: 16 / 14,
+          fontWeight: FontWeight.w500,
           letterSpacing: .5,
+          fontVariations: _roundedFlex,
+        ),
+        labelSmall: const TextStyle(
+          fontFamily: family,
+          fontSize: 11,
+          height: 16 / 11,
+          fontWeight: FontWeight.w500,
+          letterSpacing: .5,
+          fontVariations: _roundedFlex,
         ),
       ),
       appBarTheme: AppBarTheme(

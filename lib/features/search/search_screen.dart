@@ -90,6 +90,9 @@ class _SearchScreenState extends State<SearchScreen> {
       child: Stack(
         children: [
           ColoredBox(
+            // Flutter's Material 3 ColorScheme has migrated the Compose
+            // background canvas role to `surface`; using it also keeps the
+            // search and genre transition on the same dynamic colour plane.
             color: colors.surface,
             child: SafeArea(
               bottom: false,

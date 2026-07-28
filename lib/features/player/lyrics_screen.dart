@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -15,58 +16,64 @@ import '../../core/data/lyrics_service.dart';
 import '../../core/models/lyrics.dart';
 import '../../core/models/song.dart';
 import '../../core/state/app_controller.dart';
+import '../../core/theme/pixelplay_theme.dart';
 import '../../core/theme/rounded_star_clipper.dart';
 import '../../shared/widgets/artwork.dart';
+import '../../shared/widgets/playing_eq_icon.dart';
+import 'player_color_scheme_transition.dart';
 import 'wavy_slider.dart';
 
 Future<void> showLyricsFlow(BuildContext context, Song song) async {
   final controller = AppScope.of(context);
-  final colorScheme = Theme.of(context).colorScheme;
   final preference = LyricsSourcePreference.fromSetting(
     controller.stringSetting(
       'library_lyrics_source_priority',
       'Embedded first',
     ),
   );
-  
-  final localLyrics = await LyricsService.instance.lyricsFor(
-    song,
-    preference: preference,
-    includeRemote: false,
-  );
-  
+
+  LyricsDocument? localLyrics;
+  try {
+    localLyrics = await LyricsService.instance.lyricsFor(
+      song,
+      preference: preference,
+      includeRemote: false,
+    );
+  } catch (_) {
+    // A corrupt tag or inaccessible sidecar file must not crash this flow.
+  }
+
   if (!context.mounted) return;
-  
-  final lyricsToUse = localLyrics ??
-      const LyricsDocument(
-        plain: <String>[],
-        raw: '',
-      );
+
+  var lyricsToUse = localLyrics;
+  lyricsToUse ??= await showDialog<LyricsDocument>(
+    context: context,
+    barrierDismissible: true,
+    builder: (dialogContext) =>
+        _LyricsPickupDialog(song: song, preference: preference),
+  );
+
+  if (!context.mounted || lyricsToUse == null) return;
 
   await Navigator.of(context).push<void>(
     PageRouteBuilder(
-      pageBuilder: (context, animation, secondaryAnimation) => Theme(
-        data: Theme.of(context).copyWith(colorScheme: colorScheme),
-        child: LyricsScreen(song: song, initialLyrics: lyricsToUse),
-      ),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          LyricsScreen(song: song, initialLyrics: lyricsToUse!),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 0.15),
-            end: Offset.zero,
-          ).animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.fastOutSlowIn,
-            ),
-          ),
-          child: FadeTransition(
-            opacity: animation,
-            child: child,
-          ),
+          position:
+              Tween<Offset>(
+                // LyricsSheet enters from only 6% of its height in the Kotlin
+                // source, then settles with a medium-low, low-bouncy spring.
+                begin: const Offset(0, 0.06),
+                end: Offset.zero,
+              ).animate(
+                CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+              ),
+          child: FadeTransition(opacity: animation, child: child),
         );
       },
-      transitionDuration: const Duration(milliseconds: 220),
+      transitionDuration: const Duration(milliseconds: 420),
     ),
   );
 }
@@ -85,9 +92,19 @@ class LyricsScreen extends StatefulWidget {
   State<LyricsScreen> createState() => _LyricsScreenState();
 }
 
-class _LyricsScreenState extends State<LyricsScreen> {
+class _LyricsScreenState extends State<LyricsScreen>
+    with SingleTickerProviderStateMixin {
+  static const _trackSwipeThreshold = 100.0;
+
   final ScrollController _scrollController = ScrollController();
-  late LyricsDocument _lyrics = widget.initialLyrics;
+  final GlobalKey _lyricsViewportKey = GlobalKey(
+    debugLabel: 'lyrics-scroll-viewport',
+  );
+  final Map<int, GlobalKey> _syncedLineKeys = <int, GlobalKey>{};
+  late Song _song;
+  late LyricsDocument _lyrics;
+  int _lyricsLoadGeneration = 0;
+  String? _switchingToSongId;
   bool _showSynced = true;
   bool _translating = false;
   bool _syncControlsVisible = false;
@@ -96,45 +113,85 @@ class _LyricsScreenState extends State<LyricsScreen> {
   bool _wakelockApplied = false;
   int _syncOffsetMs = 0;
   int _lastActiveLine = -1;
+  double? _lastLyricsViewportHeight;
   bool _controlsVisible = true;
   Timer? _immersiveTimer;
   bool _searchingRemote = false;
+  late final AnimationController _swipeFeedback;
+  final ValueNotifier<double> _trackSwipeOffset = ValueNotifier(0);
+  bool _isTrackSwipeActive = false;
 
   @override
   void initState() {
     super.initState();
+    _song = widget.song;
+    _lyrics = widget.initialLyrics;
     _showSynced = _lyrics.hasSynced;
-    if (!_lyrics.hasSynced && _lyrics.plain.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _autoFetchLyrics());
-    }
+    _swipeFeedback = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
   }
 
-  Future<void> _autoFetchLyrics() async {
-    if (_searchingRemote || !mounted) return;
-    setState(() => _searchingRemote = true);
+  Future<void> _switchToSong(AppController controller, Song song) async {
+    if (!mounted || song.id == _song.id) {
+      _switchingToSongId = null;
+      return;
+    }
+
+    final loadGeneration = ++_lyricsLoadGeneration;
+    final preference = LyricsSourcePreference.fromSetting(
+      controller.stringSetting(
+        'library_lyrics_source_priority',
+        'Embedded first',
+      ),
+    );
+    setState(() {
+      _song = song;
+      // Couple the visible lyric document and Material You palette to the
+      // same song update. Previously the palette looked at currentSong while
+      // the lyric document was switched one frame later, which is especially
+      // noticeable when skipping from the lyrics screen.
+      _lyrics = const LyricsDocument(raw: '');
+      _showSynced = true;
+      _searchingRemote = true;
+      _syncOffsetMs =
+          int.tryParse(
+            controller.stringSetting('lyrics_sync_offset_${song.id}', '0'),
+          ) ??
+          0;
+      _lastActiveLine = -1;
+      _lastLyricsViewportHeight = null;
+      _syncedLineKeys.clear();
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+
+    LyricsDocument? fetched;
     try {
-      final preference = LyricsSourcePreference.fromSetting(
-        AppScope.of(context).stringSetting(
-          'library_lyrics_source_priority',
-          'Embedded first',
-        ),
-      );
-      final fetched = await LyricsService.instance.lyricsFor(
-        widget.song,
+      fetched = await LyricsService.instance.lyricsFor(
+        song,
         preference: preference,
         includeRemote: true,
       );
-      if (fetched != null && mounted) {
-        setState(() {
-          _lyrics = fetched;
-          _showSynced = _lyrics.hasSynced;
-        });
-      }
     } catch (_) {
-      // Ignore background auto-fetch errors
-    } finally {
-      if (mounted) setState(() => _searchingRemote = false);
+      // Keep the empty state; the picker remains available from the menu.
     }
+    if (!mounted ||
+        loadGeneration != _lyricsLoadGeneration ||
+        song.id != _song.id) {
+      return;
+    }
+
+    setState(() {
+      _lyrics = fetched ?? const LyricsDocument(raw: '');
+      _showSynced = _lyrics.hasSynced;
+      _searchingRemote = false;
+      _switchingToSongId = null;
+      _lastActiveLine = -1;
+      _syncedLineKeys.clear();
+    });
   }
 
   @override
@@ -145,7 +202,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
     final controller = AppScope.of(context);
     _syncOffsetMs =
         int.tryParse(
-          controller.stringSetting('lyrics_sync_offset_${widget.song.id}', '0'),
+          controller.stringSetting('lyrics_sync_offset_${_song.id}', '0'),
         ) ??
         0;
     _applyWakelock(controller.boolSetting('lyrics_keep_screen_on', false));
@@ -160,6 +217,8 @@ class _LyricsScreenState extends State<LyricsScreen> {
     if (_wakelockApplied) {
       WakelockPlus.disable().catchError((_) {});
     }
+    _swipeFeedback.dispose();
+    _trackSwipeOffset.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -167,7 +226,44 @@ class _LyricsScreenState extends State<LyricsScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
-    final colors = Theme.of(context).colorScheme;
+    final currentSong = controller.currentSong;
+    if (currentSong != null &&
+        currentSong.id != _song.id &&
+        _switchingToSongId != currentSong.id) {
+      _switchingToSongId = currentSong.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_switchToSong(controller, currentSong));
+        }
+      });
+    }
+    final baseColors = Theme.of(context).colorScheme;
+    final useAlbumColors =
+        controller.stringSetting(
+          'appearance_player_palette',
+          controller.boolSetting('appearance_use_album_colors', true)
+              ? 'Album Art'
+              : 'System Dynamic',
+        ) ==
+        'Album Art';
+    final variant = switch (controller.stringSetting(
+      'appearance_palette_style',
+      'Tonal spot',
+    )) {
+      'Tonal spot' => DynamicSchemeVariant.tonalSpot,
+      'Vibrant' => DynamicSchemeVariant.vibrant,
+      'Expressive' => DynamicSchemeVariant.expressive,
+      'Fidelity' => DynamicSchemeVariant.fidelity,
+      'Monochrome' => DynamicSchemeVariant.monochrome,
+      _ => DynamicSchemeVariant.tonalSpot,
+    };
+    final targetColors = useAlbumColors
+        ? ColorScheme.fromSeed(
+            seedColor: controller.playerPaletteSeedFor(_song),
+            brightness: baseColors.brightness,
+            dynamicSchemeVariant: variant,
+          )
+        : baseColors;
     final showTranslation = controller.boolSetting(
       'show_lyrics_translation',
       true,
@@ -185,162 +281,292 @@ class _LyricsScreenState extends State<LyricsScreen> {
     final immersive =
         controller.boolSetting('immersive_lyrics', false) &&
         !_immersiveTemporarilyDisabled;
-    return Scaffold(
-      backgroundColor: colors.primaryContainer,
-      body: SafeArea(
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: immersive ? _resetImmersiveTimer : null,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        ValueListenableBuilder<Duration>(
-                          valueListenable: controller.positionListenable,
-                          builder: (context, position, _) {
-                            final adjustedPosition = Duration(
-                              milliseconds:
-                                  (position.inMilliseconds + _syncOffsetMs)
-                                      .clamp(0, 1 << 62),
-                            );
-                            final active = _activeLine(adjustedPosition);
-                            _keepActiveLineVisible(active);
-                            return _showSynced && _lyrics.hasSynced
-                                ? _SyncedLyricsList(
-                                    controller: _scrollController,
-                                    lines: _lyrics.synced,
-                                    activeIndex: active,
-                                    position: adjustedPosition,
-                                    showTranslation: showTranslation,
-                                    showRomanization: showRomanization,
-                                    alignment: alignment,
-                                    animatedLyrics: animatedLyrics,
-                                    blurLyrics: blurLyrics,
-                                    blurStrength:
-                                        controller.doubleSetting(
-                                          'experimental_lyrics_blur_strength',
-                                          .25,
-                                        ) *
-                                        10,
-                                    immersive: immersive,
-                                    fromRemote: _lyrics.fromRemote,
-                                    onLineTap: (line) {
-                                      final seekMs =
-                                          (line.time.inMilliseconds -
-                                                  _syncOffsetMs)
-                                              .clamp(0, 1 << 62);
-                                      controller.seek(
-                                        seekMs /
-                                            mathMax(
-                                              1,
-                                              widget
-                                                  .song
-                                                  .duration
-                                                  .inMilliseconds,
-                                            ),
+    return PlayerColorSchemeTransition(
+      target: targetColors,
+      builder: (context, colors, _) {
+        final background = colors.primaryContainer;
+        final lightSystemIcons =
+            ThemeData.estimateBrightnessForColor(background) == Brightness.dark;
+        final systemStyle = SystemUiOverlayStyle(
+          statusBarColor: background,
+          statusBarIconBrightness: lightSystemIcons
+              ? Brightness.light
+              : Brightness.dark,
+          statusBarBrightness: lightSystemIcons
+              ? Brightness.dark
+              : Brightness.light,
+          systemNavigationBarColor: background,
+          systemNavigationBarIconBrightness: lightSystemIcons
+              ? Brightness.light
+              : Brightness.dark,
+          systemNavigationBarDividerColor: background,
+        );
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: systemStyle,
+          child: Theme(
+            data: PixelPlayTheme.fromColorScheme(colors),
+            child: Scaffold(
+              backgroundColor: background,
+              body: SafeArea(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: immersive ? _resetImmersiveTimer : null,
+                  onHorizontalDragStart: (_) {
+                    _swipeFeedback.stop();
+                    _trackSwipeOffset.value = 0;
+                    setState(() {
+                      _isTrackSwipeActive = true;
+                    });
+                  },
+                  onHorizontalDragUpdate: (details) {
+                    final previous = _trackSwipeOffset.value;
+                    _trackSwipeOffset.value =
+                        previous + (details.primaryDelta ?? 0);
+                    _swipeFeedback.value =
+                        (_trackSwipeOffset.value.abs() / _trackSwipeThreshold)
+                            .clamp(0.0, 1.0);
+                    // Only the sign affects which edge feedback is displayed;
+                    // keep the visual state in sync if the drag reverses.
+                    if ((previous > 0) != (_trackSwipeOffset.value > 0)) {
+                      setState(() {});
+                    }
+                    if (immersive) _resetImmersiveTimer();
+                  },
+                  onHorizontalDragCancel: _settleTrackSwipe,
+                  onHorizontalDragEnd: (_) {
+                    final committed =
+                        _trackSwipeOffset.value.abs() >= _trackSwipeThreshold;
+                    if (committed) {
+                      HapticFeedback.mediumImpact();
+                      if (_trackSwipeOffset.value > 0) {
+                        controller.skipPrevious();
+                      } else {
+                        controller.skipNext();
+                      }
+                      final targetSong = controller.currentSong;
+                      if (targetSong != null && targetSong.id != _song.id) {
+                        _switchingToSongId = targetSong.id;
+                        unawaited(_switchToSong(controller, targetSong));
+                      }
+                    }
+                    _settleTrackSwipe();
+                  },
+                  child: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          Expanded(
+                            child: Stack(
+                              children: [
+                                ValueListenableBuilder<Duration>(
+                                  valueListenable:
+                                      controller.positionListenable,
+                                  builder: (context, position, _) {
+                                    if (!_lyrics.hasLyrics) {
+                                      return _LyricsEmptyState(
+                                        searching: _searchingRemote,
+                                        onFindLyrics: _openLyricsPicker,
                                       );
-                                    },
-                                  )
-                                : _StaticLyricsList(
-                                    controller: _scrollController,
-                                    lines: _lyrics.plain,
-                                    alignment: alignment,
-                                  );
-                          },
-                        ),
-                        IgnorePointer(
-                          child: Align(
-                            alignment: Alignment.topCenter,
-                            child: Container(
-                              height: 130,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    colors.primaryContainer,
-                                    colors.primaryContainer.withValues(
-                                      alpha: 0,
-                                    ),
-                                  ],
+                                    }
+                                    final adjustedPosition = Duration(
+                                      milliseconds:
+                                          (position.inMilliseconds +
+                                                  _syncOffsetMs)
+                                              .clamp(0, 1 << 62),
+                                    );
+                                    final active = _activeLine(
+                                      adjustedPosition,
+                                    );
+                                    _keepActiveLineCentered(active);
+                                    return _showSynced && _lyrics.hasSynced
+                                        ? LayoutBuilder(
+                                            builder: (context, constraints) {
+                                              final previousHeight =
+                                                  _lastLyricsViewportHeight;
+                                              _lastLyricsViewportHeight =
+                                                  constraints.maxHeight;
+                                              if (previousHeight != null &&
+                                                  active >= 0 &&
+                                                  (constraints.maxHeight -
+                                                              previousHeight)
+                                                          .abs() >
+                                                      .5) {
+                                                _alignActiveLine(
+                                                  active,
+                                                  attemptsLeft: 6,
+                                                  retryIfScrolling: true,
+                                                );
+                                              }
+                                              return KeyedSubtree(
+                                                key: _lyricsViewportKey,
+                                                child: _SyncedLyricsList(
+                                                  controller: _scrollController,
+                                                  lines: _lyrics.synced,
+                                                  lineKeys: _syncedLineKeys,
+                                                  activeIndex: active,
+                                                  position: adjustedPosition,
+                                                  showTranslation:
+                                                      showTranslation,
+                                                  showRomanization:
+                                                      showRomanization,
+                                                  alignment: alignment,
+                                                  animatedLyrics:
+                                                      animatedLyrics,
+                                                  blurLyrics: blurLyrics,
+                                                  blurStrength:
+                                                      controller.doubleSetting(
+                                                        'experimental_lyrics_blur_strength',
+                                                        .25,
+                                                      ) *
+                                                      10,
+                                                  immersive: immersive,
+                                                  fromRemote:
+                                                      _lyrics.fromRemote,
+                                                  onLineTap: (line) {
+                                                    final seekMs =
+                                                        (line.time.inMilliseconds -
+                                                                _syncOffsetMs)
+                                                            .clamp(0, 1 << 62);
+                                                    controller.seek(
+                                                      seekMs /
+                                                          mathMax(
+                                                            1,
+                                                            _song
+                                                                .duration
+                                                                .inMilliseconds,
+                                                          ),
+                                                    );
+                                                  },
+                                                ),
+                                              );
+                                            },
+                                          )
+                                        : _StaticLyricsList(
+                                            controller: _scrollController,
+                                            lines: _lyrics.plain,
+                                            alignment: alignment,
+                                          );
+                                  },
                                 ),
+                                IgnorePointer(
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    child: Container(
+                                      height: 130,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            colors.primaryContainer,
+                                            colors.primaryContainer.withValues(
+                                              alpha: 0,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                IgnorePointer(
+                                  child: Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: Container(
+                                      height: 80,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            colors.primaryContainer.withValues(
+                                              alpha: 0,
+                                            ),
+                                            colors.primaryContainer,
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 18,
+                                  top: 4,
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth:
+                                          MediaQuery.sizeOf(context).width - 36,
+                                    ),
+                                    child: AnimatedSwitcher(
+                                      duration: const Duration(
+                                        milliseconds: 350,
+                                      ),
+                                      switchInCurve: Curves.easeOut,
+                                      switchOutCurve: Curves.easeIn,
+                                      child: _NowPlayingPill(
+                                        key: ValueKey(_song.id),
+                                        song: _song,
+                                        isPlaying: controller.isPlaying,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (!immersive || _controlsVisible)
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 350),
+                              switchInCurve: Curves.easeOut,
+                              switchOutCurve: Curves.easeIn,
+                              child: _PlaybackDock(
+                                key: ValueKey(_song.id),
+                                song: _song,
+                                showSynced: _showSynced,
+                                hasSynced: _lyrics.hasSynced,
+                                syncControlsVisible:
+                                    _syncControlsVisible &&
+                                    _showSynced &&
+                                    _lyrics.hasSynced,
+                                syncOffsetMs: _syncOffsetMs,
+                                onSyncOffsetChanged: (offset) =>
+                                    _setSyncOffset(controller, offset),
+                                onModeChanged: (value) {
+                                  if (_showSynced == value) return;
+                                  setState(() {
+                                    _showSynced = value;
+                                    _lastActiveLine = -1;
+                                  });
+                                  if (_scrollController.hasClients) {
+                                    _scrollController.jumpTo(0);
+                                  }
+                                },
+                                onMore: () => _showLyricsOptions(controller),
                               ),
                             ),
-                          ),
+                        ],
+                      ),
+                      if (_translating)
+                        const Positioned(
+                          left: 0,
+                          right: 0,
+                          top: 0,
+                          child: LinearProgressIndicator(),
                         ),
-                        IgnorePointer(
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: Container(
-                              height: 80,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    colors.primaryContainer.withValues(
-                                      alpha: 0,
-                                    ),
-                                    colors.primaryContainer,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
+                      IgnorePointer(
+                        child: _TrackSwipeFeedback(
+                          controller: _swipeFeedback,
+                          dragOffset: _trackSwipeOffset,
+                          visible: _isTrackSwipeActive,
                         ),
-                        Positioned(
-                          left: 18,
-                          top: 4,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: MediaQuery.sizeOf(context).width - 36,
-                            ),
-                            child: _NowPlayingPill(
-                              song: widget.song,
-                              isPlaying: controller.isPlaying,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                  if (!immersive || _controlsVisible)
-                    _PlaybackDock(
-                      song: widget.song,
-                      showSynced: _showSynced,
-                      hasSynced: _lyrics.hasSynced,
-                      syncControlsVisible:
-                          _syncControlsVisible &&
-                          _showSynced &&
-                          _lyrics.hasSynced,
-                      syncOffsetMs: _syncOffsetMs,
-                      onSyncOffsetChanged: (offset) =>
-                          _setSyncOffset(controller, offset),
-                      onModeChanged: (value) {
-                        if (_showSynced == value) return;
-                        setState(() => _showSynced = value);
-                        if (_scrollController.hasClients) {
-                          _scrollController.jumpTo(0);
-                        }
-                      },
-                      onMore: () => _showLyricsOptions(controller),
-                    ),
-                ],
-              ),
-              if (_translating)
-                const Positioned(
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  child: LinearProgressIndicator(),
                 ),
-            ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -361,38 +587,109 @@ class _LyricsScreenState extends State<LyricsScreen> {
     return answer;
   }
 
-  void _keepActiveLineVisible(int active) {
+  void _keepActiveLineCentered(int active) {
     if (active < 0 || active == _lastActiveLine) return;
     _lastActiveLine = active;
+    _alignActiveLine(active, attemptsLeft: 3);
+  }
+
+  void _alignActiveLine(
+    int active, {
+    required int attemptsLeft,
+    bool retryIfScrolling = false,
+  }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      final controller = AppScope.of(context);
-      final showTranslation = controller.boolSetting(
-        'show_lyrics_translation',
-        true,
-      );
-      final showRomanization = controller.boolSetting(
-        'show_lyrics_romanization',
-        true,
-      );
-      final hasExtraText =
-          (showTranslation &&
-              _lyrics.synced.any((l) => l.translation?.isNotEmpty == true)) ||
-          (showRomanization &&
-              _lyrics.synced.any((l) => l.romanization?.isNotEmpty == true));
-      final estimatedLineHeight = hasExtraText ? 68.0 : 54.0;
-      final viewportHeight = _scrollController.position.viewportDimension;
-      final target =
-          (active * estimatedLineHeight - (viewportHeight / 2) + 120.0).clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
+      final position = _scrollController.position;
+
+      // Match LazyListState.isScrollInProgress in the Kotlin implementation:
+      // lyric changes never fight a drag or fling initiated by the listener.
+      if (position.isScrollingNotifier.value) {
+        if (retryIfScrolling && attemptsLeft > 0) {
+          unawaited(
+            Future<void>.delayed(const Duration(milliseconds: 90), () {
+              if (!mounted) return;
+              _alignActiveLine(
+                active,
+                attemptsLeft: attemptsLeft - 1,
+                retryIfScrolling: true,
+              );
+            }),
           );
-      _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeOutCubic,
+        }
+        return;
+      }
+
+      final lineContext = _syncedLineKeys[active]?.currentContext;
+      final viewportContext = _lyricsViewportKey.currentContext;
+      final lineBox = lineContext?.findRenderObject();
+      final viewportBox = viewportContext?.findRenderObject();
+
+      if (lineBox is RenderBox &&
+          lineBox.hasSize &&
+          viewportBox is RenderBox &&
+          viewportBox.hasSize) {
+        final lineCenter = lineBox
+            .localToGlobal(Offset(0, lineBox.size.height / 2))
+            .dy;
+        final viewportTop = viewportBox.localToGlobal(Offset.zero).dy;
+
+        // Kotlin's highlightSnapOffsetPx places the line centre 32dp above
+        // the geometric centre, leaving balanced reading space above the
+        // fixed playback dock.
+        final highlightCenter =
+            viewportTop + (viewportBox.size.height / 2) - 32;
+        final delta = lineCenter - highlightCenter;
+        final target = (position.pixels + delta).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+        if ((target - position.pixels).abs() < .5) return;
+
+        final reduceMotion = MediaQuery.disableAnimationsOf(context);
+        if (reduceMotion) {
+          _scrollController.jumpTo(target);
+        } else {
+          unawaited(
+            _scrollController.animateTo(
+              target,
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.fastOutSlowIn,
+            ),
+          );
+        }
+        return;
+      }
+
+      if (attemptsLeft <= 0 || _lyrics.synced.isEmpty) return;
+
+      // A large seek can target an item outside ListView's cache. Make one
+      // coarse jump to build that item, then refine from its real RenderBox
+      // on the next frame. The final alignment never relies on an estimated
+      // lyric height.
+      final relativeIndex = _lyrics.synced.length <= 1
+          ? 0.0
+          : active / (_lyrics.synced.length - 1);
+      final coarseTarget = (position.maxScrollExtent * relativeIndex).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      _scrollController.jumpTo(coarseTarget);
+      _alignActiveLine(
+        active,
+        attemptsLeft: attemptsLeft - 1,
+        retryIfScrolling: retryIfScrolling,
       );
     });
+  }
+
+  void _settleTrackSwipe() {
+    setState(() => _isTrackSwipeActive = false);
+    unawaited(
+      _swipeFeedback.reverse(from: _swipeFeedback.value).whenComplete(() {
+        if (mounted) _trackSwipeOffset.value = 0;
+      }),
+    );
   }
 
   Future<void> _showLyricsOptions(AppController controller) async {
@@ -433,18 +730,39 @@ class _LyricsScreenState extends State<LyricsScreen> {
       return;
     }
     if (action == 'reset') {
-      await LyricsService.instance.resetLyrics(widget.song);
+      await LyricsService.instance.resetLyrics(_song);
       if (mounted) Navigator.pop(context);
       return;
     }
   }
 
+  Future<void> _openLyricsPicker() async {
+    final controller = AppScope.of(context);
+    final preference = LyricsSourcePreference.fromSetting(
+      controller.stringSetting(
+        'library_lyrics_source_priority',
+        'Embedded first',
+      ),
+    );
+    final selected = await showDialog<LyricsDocument>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) =>
+          _LyricsPickupDialog(song: _song, preference: preference),
+    );
+    if (!mounted || selected == null || !selected.hasLyrics) return;
+    setState(() {
+      _lyrics = selected;
+      _showSynced = selected.hasSynced;
+      _lastActiveLine = -1;
+      _lastLyricsViewportHeight = null;
+      _syncedLineKeys.clear();
+    });
+  }
+
   void _setSyncOffset(AppController controller, int offset) {
     setState(() => _syncOffsetMs = offset);
-    controller.setStringSetting(
-      'lyrics_sync_offset_${widget.song.id}',
-      '$offset',
-    );
+    controller.setStringSetting('lyrics_sync_offset_${_song.id}', '$offset');
   }
 
   void _applyWakelock(bool enabled) {
@@ -465,7 +783,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
   }
 
   Future<void> _saveLyrics() async {
-    final safeTitle = widget.song.title
+    final safeTitle = _song.title
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
         .trim();
     try {
@@ -506,7 +824,7 @@ class _LyricsScreenState extends State<LyricsScreen> {
     );
     try {
       final translated = await LyricsAiTranslator().translate(
-        song: widget.song,
+        song: _song,
         lyrics: _lyrics,
         targetLanguage: Localizations.localeOf(context).toLanguageTag(),
         apiKey: apiKey,
@@ -532,7 +850,11 @@ class _LyricsScreenState extends State<LyricsScreen> {
 }
 
 class _NowPlayingPill extends StatelessWidget {
-  const _NowPlayingPill({required this.song, required this.isPlaying});
+  const _NowPlayingPill({
+    super.key,
+    required this.song,
+    required this.isPlaying,
+  });
 
   final Song song;
   final bool isPlaying;
@@ -577,13 +899,93 @@ class _NowPlayingPill extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.only(left: 8, right: 18),
-              child: Icon(
-                Icons.graphic_eq_rounded,
-                size: 18,
+              child: PlayingEqIcon(
+                isPlaying: isPlaying,
                 color: colors.onSurface,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LyricsEmptyState extends StatelessWidget {
+  const _LyricsEmptyState({
+    required this.searching,
+    required this.onFindLyrics,
+  });
+
+  final bool searching;
+  final VoidCallback onFindLyrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      liveRegion: true,
+      label: searching ? 'Searching for lyrics' : 'No lyrics available',
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(32, 118, 32, 96),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: searching
+                ? Column(
+                    key: const ValueKey('lyrics-searching-state'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(
+                        color: colors.onPrimaryContainer,
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Searching for lyrics…',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(color: colors.onPrimaryContainer),
+                      ),
+                    ],
+                  )
+                : Column(
+                    key: const ValueKey('lyrics-empty-state'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.lyrics_outlined,
+                        size: 48,
+                        color: colors.onPrimaryContainer.withValues(alpha: .72),
+                      ),
+                      const SizedBox(height: 18),
+                      Text(
+                        'No lyrics available',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: colors.onPrimaryContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This track does not have lyrics yet.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: colors.onPrimaryContainer.withValues(
+                            alpha: .72,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.tonalIcon(
+                        onPressed: onFindLyrics,
+                        icon: const Icon(Icons.search_rounded),
+                        label: const Text('Search or import lyrics'),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -648,6 +1050,7 @@ class _SyncedLyricsList extends StatelessWidget {
   const _SyncedLyricsList({
     required this.controller,
     required this.lines,
+    required this.lineKeys,
     required this.activeIndex,
     required this.position,
     required this.showTranslation,
@@ -663,6 +1066,7 @@ class _SyncedLyricsList extends StatelessWidget {
 
   final ScrollController controller;
   final List<SyncedLyricLine> lines;
+  final Map<int, GlobalKey> lineKeys;
   final int activeIndex;
   final Duration position;
   final bool showTranslation;
@@ -679,6 +1083,7 @@ class _SyncedLyricsList extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return ListView.builder(
+      key: const ValueKey('lyrics-scroll-view'),
       controller: controller,
       padding: const EdgeInsets.fromLTRB(24, 130, 24, 100),
       itemCount: lines.length + (fromRemote ? 1 : 0),
@@ -717,15 +1122,15 @@ class _SyncedLyricsList extends StatelessWidget {
             : distance == 1
             ? .62
             : .38;
+        final verticalPadding = animatedLyrics
+            ? (active ? 24.0 : (distance == 1 ? 12.0 : 6.0))
+            : 12.0;
         Widget content = Padding(
-          padding: EdgeInsets.symmetric(
-            vertical: animatedLyrics
-                ? active
-                      ? 32
-                      : distance == 1
-                      ? 16
-                      : 8
-                : 13,
+          padding: EdgeInsets.only(
+            top: verticalPadding,
+            bottom: verticalPadding,
+            left: alignment == 'right' ? 36.0 : 0.0,
+            right: alignment == 'left' ? 36.0 : 0.0,
           ),
           child: Column(
             crossAxisAlignment: crossAxisAlignment,
@@ -768,12 +1173,12 @@ class _SyncedLyricsList extends StatelessWidget {
           ),
         );
         content = AnimatedScale(
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 350),
           curve: Curves.easeOutCubic,
           scale: scale,
           alignment: _lyricsAlignment(alignment),
           child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 400),
+            duration: const Duration(milliseconds: 350),
             opacity: opacity,
             child: content,
           ),
@@ -781,28 +1186,39 @@ class _SyncedLyricsList extends StatelessWidget {
         if (animatedLyrics && blurLyrics && distance > 0) {
           content = ImageFiltered(
             imageFilter: ui.ImageFilter.blur(
-              sigmaX: (distance * blurStrength).clamp(0, 10),
-              sigmaY: (distance * blurStrength).clamp(0, 10),
+              sigmaX: (distance * blurStrength).clamp(0, 8),
+              sigmaY: (distance * blurStrength).clamp(0, 8),
             ),
             child: content,
           );
         }
-        return InkWell(
-          borderRadius: BorderRadius.circular(18),
-          onTap: () => onLineTap(line),
-          child: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOut,
-            style:
-                Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  height: 1.28,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                  color: active
-                      ? colors.onPrimaryContainer
-                      : colors.onPrimaryContainer.withValues(alpha: .38),
-                ) ??
-                const TextStyle(),
-            child: content,
+        return KeyedSubtree(
+          key: lineKeys.putIfAbsent(
+            index,
+            () => GlobalKey(debugLabel: 'synced-lyric-$index'),
+          ),
+          child: InkWell(
+            key: ValueKey('lyrics-line-$index'),
+            borderRadius: BorderRadius.circular(18),
+            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+            splashFactory: NoSplash.splashFactory,
+            onTap: () => onLineTap(line),
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              style:
+                  Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    height: 1.28,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active
+                        ? colors.onPrimaryContainer
+                        : colors.onPrimaryContainer.withValues(alpha: .38),
+                    fontFamily: 'GoogleSansFlex',
+                    fontVariations: const [ui.FontVariation('ROND', 100)],
+                  ) ??
+                  const TextStyle(),
+              child: content,
+            ),
           ),
         );
       },
@@ -982,8 +1398,76 @@ Alignment _lyricsAlignment(String alignment) => switch (alignment) {
   _ => Alignment.centerLeft,
 };
 
+/// The Kotlin LyricsSheet exposes a 100dp directional card while the listener
+/// swipes horizontally to move through the queue. Keeping this feedback in a
+/// repaint-only [AnimatedBuilder] means a long lyrics list is not rebuilt for
+/// every drag frame.
+class _TrackSwipeFeedback extends StatelessWidget {
+  const _TrackSwipeFeedback({
+    required this.controller,
+    required this.dragOffset,
+    required this.visible,
+  });
+
+  final AnimationController controller;
+  final ValueListenable<double> dragOffset;
+  final bool visible;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: Listenable.merge([controller, dragOffset]),
+      builder: (context, _) {
+        if (!visible && controller.value <= 0) {
+          return const SizedBox.shrink();
+        }
+        final isNext = dragOffset.value < 0;
+        final alignment = isNext ? Alignment.centerRight : Alignment.centerLeft;
+        final translation = (1 - controller.value) * 100;
+        return Align(
+          alignment: alignment,
+          child: Transform.translate(
+            offset: Offset(isNext ? translation : -translation, 0),
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: isNext ? 0 : 6,
+                right: isNext ? 6 : 0,
+              ),
+              child: Transform.scale(
+                scale: .8 + controller.value * .2,
+                child: Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(isNext ? 360 : 8),
+                      bottomLeft: Radius.circular(isNext ? 360 : 8),
+                      topRight: Radius.circular(isNext ? 8 : 360),
+                      bottomRight: Radius.circular(isNext ? 8 : 360),
+                    ),
+                  ),
+                  child: Icon(
+                    isNext
+                        ? Icons.skip_next_rounded
+                        : Icons.skip_previous_rounded,
+                    color: colors.onPrimary,
+                    size: 48,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _PlaybackDock extends StatelessWidget {
   const _PlaybackDock({
+    super.key,
     required this.song,
     required this.showSynced,
     required this.hasSynced,
@@ -1007,132 +1491,154 @@ class _PlaybackDock extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (syncControlsVisible) ...[
-            _LyricsSyncControls(
-              offsetMs: syncOffsetMs,
-              onChanged: onSyncOffsetChanged,
-            ),
-            const SizedBox(height: 8),
-          ],
-          Row(
-            children: [
-              AnimatedContainer(
-                width: 78,
-                height: 78,
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOutCubic,
-                decoration: BoxDecoration(
-                  color: colors.tertiaryFixedDim,
-                  borderRadius: BorderRadius.circular(
-                    controller.isPlaying ? 18 : 50,
-                  ),
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
+    return ColoredBox(
+      color: colors.primaryContainer,
+      child: Padding(
+        key: const ValueKey('lyrics-playback-dock'),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (syncControlsVisible) ...[
+              _LyricsSyncControls(
+                offsetMs: syncOffsetMs,
+                onChanged: onSyncOffsetChanged,
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              key: const ValueKey('lyrics-playback-row'),
+              children: [
+                AnimatedContainer(
+                  key: const ValueKey('lyrics-play-pause'),
+                  width: 78,
+                  height: 78,
+                  duration: const Duration(milliseconds: 350),
+                  curve: Curves.easeOutCubic,
+                  decoration: BoxDecoration(
+                    color: colors.tertiaryFixedDim,
                     borderRadius: BorderRadius.circular(
                       controller.isPlaying ? 18 : 50,
                     ),
-                    onTap: controller.togglePlayPause,
-                    child: Icon(
-                      controller.isPlaying
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      color: colors.onTertiaryFixed,
-                      size: 32,
-                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  height: 50,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: colors.surfaceContainerLowest,
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  child: ValueListenableBuilder<Duration>(
-                    valueListenable: controller.positionListenable,
-                    builder: (context, position, _) => WavySlider(
-                      value:
-                          (position.inMilliseconds /
-                                  mathMax(1, song.duration.inMilliseconds))
-                              .clamp(0, 1),
-                      onChanged: (_) {},
-                      onChangeEnd: controller.seek,
-                      activeColor: colors.primary,
-                      inactiveColor: colors.primary.withValues(alpha: .2),
-                      thumbColor: colors.primary,
-                      isPlaying: controller.isPlaying,
-                      strokeWidth: 5,
-                      thumbRadius: 8,
-                      wavelength: 30,
-                      trackEdgePadding: 4,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              SizedBox.square(
-                dimension: 48,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(
-                    backgroundColor: colors.surfaceContainerLowest,
-                    foregroundColor: colors.onSurface,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _LyricsModeButton(
-                        label: 'Synced',
-                        active: showSynced,
-                        enabled: hasSynced,
-                        onTap: () => onModeChanged(true),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(
+                        controller.isPlaying ? 18 : 50,
+                      ),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        controller.togglePlayPause();
+                      },
+                      child: Icon(
+                        controller.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                        color: colors.onTertiaryFixed,
+                        size: 32,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _LyricsModeButton(
-                        label: 'Static',
-                        active: !showSynced,
-                        onTap: () => onModeChanged(false),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    key: const ValueKey('lyrics-seek-container'),
+                    height: 50,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerLowest,
+                      borderRadius: BorderRadius.circular(25),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colors.shadow.withValues(alpha: .22),
+                          blurRadius: 16,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ValueListenableBuilder<Duration>(
+                      valueListenable: controller.positionListenable,
+                      builder: (context, position, _) => WavySlider(
+                        value:
+                            (position.inMilliseconds /
+                                    mathMax(1, song.duration.inMilliseconds))
+                                .clamp(0, 1),
+                        onChanged: (_) {},
+                        onChangeEnd: controller.seek,
+                        activeColor: colors.primary,
+                        inactiveColor: colors.primary.withValues(alpha: .2),
+                        thumbColor: colors.primary,
+                        isPlaying: controller.isPlaying,
+                        strokeWidth: 5,
+                        thumbRadius: 8,
+                        wavelength: 30,
+                        trackEdgePadding: 4,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              SizedBox.square(
-                dimension: 48,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(
-                    backgroundColor: colors.surfaceContainerLowest,
-                    foregroundColor: colors.onSurface,
                   ),
-                  onPressed: onMore,
-                  icon: const Icon(Icons.more_vert_rounded),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              key: const ValueKey('lyrics-floating-toolbar'),
+              children: [
+                SizedBox.square(
+                  key: const ValueKey('lyrics-back-button'),
+                  dimension: 48,
+                  child: IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: colors.surfaceContainerLowest,
+                      foregroundColor: colors.onSurface,
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _LyricsModeButton(
+                          key: const ValueKey('lyrics-synced-button'),
+                          label: 'Synced',
+                          active: showSynced,
+                          enabled: hasSynced,
+                          onTap: () => onModeChanged(true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _LyricsModeButton(
+                          key: const ValueKey('lyrics-static-button'),
+                          label: 'Static',
+                          active: !showSynced,
+                          onTap: () => onModeChanged(false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox.square(
+                  key: const ValueKey('lyrics-more-button'),
+                  dimension: 48,
+                  child: IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: colors.surfaceContainerLowest,
+                      foregroundColor: colors.onSurface,
+                    ),
+                    onPressed: onMore,
+                    icon: const Icon(Icons.more_vert_rounded),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1144,6 +1650,7 @@ class _LyricsModeButton extends StatelessWidget {
     required this.active,
     required this.onTap,
     this.enabled = true,
+    super.key,
   });
 
   final String label;
@@ -1537,6 +2044,8 @@ class _LyricsPlaybackTogglesState extends State<_LyricsPlaybackToggles> {
       child: Row(
         children: [
           _toggle(
+            key: const ValueKey('lyrics-playback-shuffle'),
+            label: 'Shuffle',
             active: widget.controller.shuffleEnabled,
             activeColor: colors.primary,
             activeContentColor: colors.onPrimary,
@@ -1548,6 +2057,8 @@ class _LyricsPlaybackTogglesState extends State<_LyricsPlaybackToggles> {
           ),
           const SizedBox(width: 8),
           _toggle(
+            key: const ValueKey('lyrics-playback-repeat'),
+            label: 'Repeat',
             active: widget.controller.repeatMode != 0,
             activeColor: colors.secondary,
             activeContentColor: colors.onSecondary,
@@ -1561,6 +2072,8 @@ class _LyricsPlaybackTogglesState extends State<_LyricsPlaybackToggles> {
           ),
           const SizedBox(width: 8),
           _toggle(
+            key: const ValueKey('lyrics-playback-favorite'),
+            label: 'Favorite',
             active: song != null && widget.controller.isFavorite(song),
             activeColor: colors.tertiary,
             activeContentColor: colors.onTertiary,
@@ -1578,6 +2091,8 @@ class _LyricsPlaybackTogglesState extends State<_LyricsPlaybackToggles> {
   }
 
   Widget _toggle({
+    required Key key,
+    required String label,
     required bool active,
     required Color activeColor,
     required Color activeContentColor,
@@ -1586,20 +2101,29 @@ class _LyricsPlaybackTogglesState extends State<_LyricsPlaybackToggles> {
   }) {
     final colors = Theme.of(context).colorScheme;
     return Expanded(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        decoration: BoxDecoration(
-          color: active ? activeColor : colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(active ? 60 : 20),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            child: Icon(
-              icon,
-              color: active ? activeContentColor : colors.onSurfaceVariant,
+      child: Semantics(
+        button: true,
+        toggled: active,
+        label: label,
+        child: AnimatedContainer(
+          key: key,
+          height: double.infinity,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.fastOutSlowIn,
+          decoration: BoxDecoration(
+            color: active ? activeColor : colors.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(active ? 60 : 8),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              child: Icon(
+                icon,
+                size: 24,
+                color: active ? activeContentColor : colors.onSurfaceVariant,
+              ),
             ),
           ),
         ),

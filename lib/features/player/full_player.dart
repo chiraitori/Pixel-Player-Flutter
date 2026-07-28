@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/models/song.dart';
@@ -9,9 +10,7 @@ import '../../core/services/audio_meta_service.dart';
 import '../../core/services/google_cast_service.dart';
 import '../../core/state/app_controller.dart';
 import '../../core/theme/pixelplay_theme.dart';
-import '../../core/theme/player_palette_cache.dart';
 import '../../shared/widgets/auto_scrolling_text.dart';
-import '../../shared/widgets/song_tile.dart';
 import '../details/album_detail_screen.dart';
 import '../details/artist_detail_screen.dart';
 import 'album_carousel.dart';
@@ -21,14 +20,9 @@ import 'cast_bottom_sheet.dart';
 import 'full_player_top_bar.dart';
 import 'lyrics_screen.dart';
 import 'player_artist_picker_sheet.dart';
+import 'player_color_scheme_transition.dart';
+import 'queue_bottom_sheet.dart';
 import 'wavy_slider.dart';
-
-class _ColorSchemeTween extends Tween<ColorScheme> {
-  _ColorSchemeTween({required ColorScheme end}) : super(end: end);
-
-  @override
-  ColorScheme lerp(double t) => ColorScheme.lerp(begin!, end!, t);
-}
 
 class FullPlayer extends StatefulWidget {
   const FullPlayer({super.key});
@@ -37,21 +31,45 @@ class FullPlayer extends StatefulWidget {
   State<FullPlayer> createState() => _FullPlayerState();
 }
 
-class _FullPlayerState extends State<FullPlayer> {
+class _FullPlayerState extends State<FullPlayer>
+    with SingleTickerProviderStateMixin {
   static const _deviceCapabilitiesChannel = MethodChannel(
     'com.chiraitori.pixelplay/device_capabilities',
   );
 
   double _verticalDrag = 0;
-  String? _paletteSongId;
-  Color? _artworkSeed;
+  late final AnimationController _dragMotion;
+  AppController? _controller;
   bool _isBluetoothActive = false;
   String? _bluetoothName;
+  bool _isPlayerSheetOpen = false;
 
   @override
   void initState() {
     super.initState();
+    _dragMotion = AnimationController.unbounded(vsync: this)
+      ..addListener(() {
+        final controller = _controller;
+        if (controller == null) return;
+        controller.fullPlayerDragOffset.value = _dragMotion.value.clamp(
+          0,
+          double.infinity,
+        );
+      });
     unawaited(_loadAudioRoute());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controller = AppScope.of(context);
+  }
+
+  @override
+  void dispose() {
+    _controller?.fullPlayerDragOffset.value = 0;
+    _dragMotion.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAudioRoute() async {
@@ -70,25 +88,11 @@ class _FullPlayerState extends State<FullPlayer> {
     }
   }
 
-  void _syncArtworkSeed(Song song) {
-    if (_paletteSongId == song.id) return;
-    _paletteSongId = song.id;
-
-    _artworkSeed = song.colors.isEmpty ? Colors.deepPurple : song.colors.first;
-    final requestedSongId = song.id;
-    unawaited(() async {
-      final seed = await PlayerPaletteCache.seedFor(song);
-      if (!mounted || _paletteSongId != requestedSongId) return;
-      setState(() => _artworkSeed = seed);
-    }());
-  }
-
   @override
   Widget build(BuildContext context) {
     final controller = AppScope.of(context);
     final song = controller.currentSong;
     if (song == null) return const SizedBox.shrink();
-    _syncArtworkSeed(song);
 
     final brightness = Theme.of(context).brightness;
     final useAlbumColors =
@@ -112,18 +116,16 @@ class _FullPlayerState extends State<FullPlayer> {
     };
     final targetPlayerColors = useAlbumColors
         ? ColorScheme.fromSeed(
-            seedColor: _artworkSeed ?? song.colors.first,
+            seedColor: controller.playerPaletteSeedFor(song),
             brightness: brightness,
             dynamicSchemeVariant: variant,
           )
         : Theme.of(context).colorScheme;
 
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    return TweenAnimationBuilder<ColorScheme>(
-      tween: _ColorSchemeTween(end: targetPlayerColors),
-      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 360),
-      curve: Curves.fastOutSlowIn,
+    return PlayerColorSchemeTransition(
+      target: targetPlayerColors,
       builder: (context, playerColors, _) {
+        final reduceMotion = MediaQuery.disableAnimationsOf(context);
         final playerBackground = playerColors.primaryContainer;
         final lightSystemIcons =
             ThemeData.estimateBrightnessForColor(playerBackground) ==
@@ -147,106 +149,143 @@ class _FullPlayerState extends State<FullPlayer> {
           value: systemStyle,
           child: Theme(
             data: PixelPlayTheme.fromColorScheme(playerColors),
-            child: Material(
+            child: ColoredBox(
+              key: const ValueKey('full-player-depth-background'),
               color: playerBackground,
-              // Compose draws the player edge-to-edge horizontally and only
-              // consumes the system bars vertically. Flutter's default
-              // SafeArea adds this device's curved-display inset on both
-              // sides, which made the album art narrower than the Kotlin UI.
-              child: SafeArea(
-                left: false,
-                right: false,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onVerticalDragStart: (_) => _verticalDrag = 0,
-                  onVerticalDragUpdate: (details) {
-                    _verticalDrag += details.primaryDelta ?? 0;
-                  },
-                  onVerticalDragEnd: (details) {
-                    final velocity = details.primaryVelocity ?? 0;
-                    if (_verticalDrag > 5 || velocity > 150) {
-                      controller.hideFullPlayer();
-                    } else if (_verticalDrag < -8 && velocity < -520) {
-                      _showQueue(context);
-                    }
-                    _verticalDrag = 0;
-                  },
-                  onTap:
-                      controller.boolSetting(
-                        'behavior_tap_background_closes_player',
-                        false,
-                      )
-                      ? controller.hideFullPlayer
-                      : null,
-                  child: OrientationBuilder(
-                    builder: (context, orientation) {
-                      final isLandscape = orientation == Orientation.landscape;
-                      final reduceMotion = MediaQuery.disableAnimationsOf(
-                        context,
-                      );
-                      return Column(
-                        children: [
-                          AnimatedSize(
-                            duration: reduceMotion
-                                ? Duration.zero
-                                : const Duration(milliseconds: 350),
-                            curve: Curves.fastOutSlowIn,
-                            alignment: Alignment.topCenter,
-                            child: isLandscape
-                                ? const SizedBox(width: double.infinity)
-                                : AnimatedBuilder(
-                                    animation: GoogleCastService.instance,
-                                    builder: (context, _) => FullPlayerTopBar(
-                                      onCollapse: controller.hideFullPlayer,
-                                      onShowOutput: () =>
-                                          _showOutput(context, song),
-                                      onShowQueue: () => _showQueue(context),
-                                      isCastConnecting:
-                                          GoogleCastService.instance.connecting,
-                                      remoteRouteName:
-                                          GoogleCastService.instance.routeName,
-                                      isBluetoothActive: _isBluetoothActive,
-                                      bluetoothName: _bluetoothName,
-                                      showCloudStream:
-                                          song.source == SongSource.telegram ||
-                                          song.source == SongSource.googleDrive,
-                                    ),
+              child: AnimatedScale(
+                key: const ValueKey('full-player-sheet-depth'),
+                scale: _isPlayerSheetOpen ? .972 : 1,
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 220),
+                curve: Curves.fastOutSlowIn,
+                // Keep the depth animation itself active, but mute continuous
+                // player tickers while Queue/Connect device covers the player.
+                child: TickerMode(
+                  enabled: !_isPlayerSheetOpen,
+                  child: Material(
+                    color: playerBackground,
+                    // Compose draws the player edge-to-edge horizontally and
+                    // only consumes the system bars vertically. Flutter's
+                    // default SafeArea adds this device's curved-display inset
+                    // on both sides, which made the artwork too narrow.
+                    child: SafeArea(
+                      left: false,
+                      right: false,
+                      child: GestureDetector(
+                        key: const ValueKey('full-player-drag-surface'),
+                        behavior: HitTestBehavior.translucent,
+                        onVerticalDragStart: (_) {
+                          _dragMotion.stop();
+                          _verticalDrag = 0;
+                          controller.fullPlayerDragOffset.value = 0;
+                        },
+                        onVerticalDragUpdate: (details) {
+                          _verticalDrag += details.primaryDelta ?? 0;
+                          controller.fullPlayerDragOffset.value = _verticalDrag
+                              .clamp(0, MediaQuery.sizeOf(context).height);
+                        },
+                        onVerticalDragEnd: (details) =>
+                            _finishVerticalDrag(controller, details),
+                        onVerticalDragCancel: () =>
+                            _restoreVerticalDrag(controller),
+                        onTap:
+                            controller.boolSetting(
+                              'behavior_tap_background_closes_player',
+                              false,
+                            )
+                            ? controller.hideFullPlayer
+                            : null,
+                        child: OrientationBuilder(
+                          builder: (context, orientation) {
+                            final isLandscape =
+                                orientation == Orientation.landscape;
+                            return Column(
+                              children: [
+                                AnimatedSize(
+                                  duration: reduceMotion
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 350),
+                                  curve: Curves.fastOutSlowIn,
+                                  alignment: Alignment.topCenter,
+                                  child: isLandscape
+                                      ? const SizedBox(width: double.infinity)
+                                      : AnimatedBuilder(
+                                          animation: GoogleCastService.instance,
+                                          builder: (context, _) =>
+                                              FullPlayerTopBar(
+                                                onCollapse:
+                                                    controller.hideFullPlayer,
+                                                onShowOutput: () =>
+                                                    _showOutput(context, song),
+                                                onShowQueue: () =>
+                                                    _showQueue(context),
+                                                isCastConnecting:
+                                                    GoogleCastService
+                                                        .instance
+                                                        .connecting,
+                                                remoteRouteName:
+                                                    GoogleCastService
+                                                        .instance
+                                                        .routeName,
+                                                isBluetoothActive:
+                                                    _isBluetoothActive,
+                                                bluetoothName: _bluetoothName,
+                                                showCloudStream:
+                                                    song.source ==
+                                                        SongSource.telegram ||
+                                                    song.source ==
+                                                        SongSource.googleDrive,
+                                              ),
+                                        ),
+                                ),
+                                Expanded(
+                                  child: AnimatedSwitcher(
+                                    duration: reduceMotion
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 380),
+                                    switchInCurve: Curves.fastOutSlowIn,
+                                    child: isLandscape
+                                        ? _LandscapePlayerContent(
+                                            key: const ValueKey(
+                                              'landscape-player',
+                                            ),
+                                            song: song,
+                                            onLyrics: () =>
+                                                _showLyrics(context, song),
+                                            onQueue: () => _showQueue(context),
+                                            onAlbum: (albumSong) =>
+                                                _openAlbum(context, albumSong),
+                                            onArtist: (artistSong) =>
+                                                _openArtist(
+                                                  context,
+                                                  artistSong,
+                                                ),
+                                          )
+                                        : _PortraitPlayerContent(
+                                            key: const ValueKey(
+                                              'portrait-player',
+                                            ),
+                                            song: song,
+                                            onLyrics: () =>
+                                                _showLyrics(context, song),
+                                            onQueue: () => _showQueue(context),
+                                            onAlbum: (albumSong) =>
+                                                _openAlbum(context, albumSong),
+                                            onArtist: (artistSong) =>
+                                                _openArtist(
+                                                  context,
+                                                  artistSong,
+                                                ),
+                                          ),
                                   ),
-                          ),
-                          Expanded(
-                            child: AnimatedSwitcher(
-                              duration: reduceMotion
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 380),
-                              switchInCurve: Curves.fastOutSlowIn,
-                              child: isLandscape
-                                  ? _LandscapePlayerContent(
-                                      key: const ValueKey('landscape-player'),
-                                      song: song,
-                                      onLyrics: () =>
-                                          _showLyrics(context, song),
-                                      onQueue: () => _showQueue(context),
-                                      onAlbum: (albumSong) =>
-                                          _openAlbum(context, albumSong),
-                                      onArtist: (artistSong) =>
-                                          _openArtist(context, artistSong),
-                                    )
-                                  : _PortraitPlayerContent(
-                                      key: const ValueKey('portrait-player'),
-                                      song: song,
-                                      onLyrics: () =>
-                                          _showLyrics(context, song),
-                                      onQueue: () => _showQueue(context),
-                                      onAlbum: (albumSong) =>
-                                          _openAlbum(context, albumSong),
-                                      onArtist: (artistSong) =>
-                                          _openArtist(context, artistSong),
-                                    ),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -257,204 +296,64 @@ class _FullPlayerState extends State<FullPlayer> {
     );
   }
 
+  Future<void> _finishVerticalDrag(
+    AppController controller,
+    DragEndDetails details,
+  ) async {
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldCollapse =
+        _verticalDrag > 48 || (_verticalDrag > 16 && velocity > 700);
+    final shouldOpenQueue = _verticalDrag < -8 && velocity < -520;
+
+    if (shouldCollapse) {
+      _dragMotion.value = controller.fullPlayerDragOffset.value;
+      final screenHeight = MediaQuery.sizeOf(context).height;
+      final remainingFraction =
+          ((screenHeight - _dragMotion.value) / screenHeight).clamp(0, 1);
+      await _dragMotion.animateTo(
+        screenHeight,
+        duration: Duration(
+          milliseconds: (160 + 120 * remainingFraction).round(),
+        ),
+        curve: Curves.fastOutSlowIn,
+      );
+      if (!mounted) return;
+      controller.hideFullPlayer();
+      _dragMotion.value = 0;
+      _verticalDrag = 0;
+      return;
+    }
+
+    await _restoreVerticalDrag(controller, velocity: velocity);
+    if (!mounted) return;
+    if (shouldOpenQueue) _showQueue(context);
+  }
+
+  Future<void> _restoreVerticalDrag(
+    AppController controller, {
+    double velocity = 0,
+  }) async {
+    _dragMotion.value = controller.fullPlayerDragOffset.value;
+    await _dragMotion.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 380, damping: 31.18),
+        _dragMotion.value,
+        0,
+        velocity,
+      ),
+    );
+    if (!mounted) return;
+    controller.fullPlayerDragOffset.value = 0;
+    _dragMotion.value = 0;
+    _verticalDrag = 0;
+  }
+
   void _showQueue(BuildContext context) {
-    final controller = AppScope.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: .72,
-        maxChildSize: .94,
-        minChildSize: .35,
-        builder: (context, scrollController) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 2, 12, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Queue',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        Text(
-                          '${controller.queue.length} songs',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton.filledTonal(
-                    onPressed: () => _showQueueSaved(context),
-                    icon: const Icon(Icons.save_rounded),
-                    tooltip: 'Save queue',
-                  ),
-                  const SizedBox(width: 6),
-                  IconButton.filledTonal(
-                    onPressed: () => _showQueueMenu(context),
-                    icon: const Icon(Icons.more_vert_rounded),
-                    tooltip: 'Queue options',
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ReorderableListView.builder(
-                scrollController: scrollController,
-                itemCount: controller.queue.length,
-                onReorderItem: controller.reorderQueue,
-                itemBuilder: (context, index) {
-                  final item = controller.queue[index];
-                  return SongTile(
-                    key: ValueKey('${item.id}-$index'),
-                    song: item,
-                    queue: controller.queue,
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showQueueSaved(BuildContext context) async {
-    final controller = AppScope.of(context);
-    final name = TextEditingController(text: 'Current queue');
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Save queue'),
-        content: TextField(
-          controller: name,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Playlist name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              controller.createPlaylist(
-                name.text,
-                controller.queue.map((song) => song.id),
-              );
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Queue saved as a playlist')),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    name.dispose();
-  }
-
-  void _showQueueMenu(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.shuffle_rounded),
-              title: const Text('Shuffle queue'),
-              onTap: () {
-                AppScope.of(context).toggleShuffle();
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.bedtime_rounded),
-              title: const Text('Sleep timer'),
-              subtitle: Text(
-                AppScope.of(context).sleepTimerLabel ?? 'Not active',
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showSleepTimer(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.playlist_remove_rounded),
-              title: const Text('Dismiss playlist'),
-              onTap: () {
-                Navigator.pop(context);
-                AppScope.of(context).dismissPlaylist();
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSleepTimer(BuildContext context) {
-    final controller = AppScope.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
-                child: Text(
-                  'Sleep timer',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final minutes in const [5, 10, 15, 30, 45, 60])
-                    ActionChip(
-                      label: Text('$minutes min'),
-                      onPressed: () {
-                        controller.setSleepTimer(Duration(minutes: minutes));
-                        Navigator.pop(context);
-                      },
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: const Icon(Icons.skip_next_rounded),
-                title: const Text('End of current track'),
-                onTap: () {
-                  controller.setSleepAtEndOfTrack();
-                  Navigator.pop(context);
-                },
-              ),
-              if (controller.sleepTimerLabel != null)
-                ListTile(
-                  leading: const Icon(Icons.timer_off_rounded),
-                  title: const Text('Cancel timer'),
-                  onTap: () {
-                    controller.cancelSleepTimer();
-                    Navigator.pop(context);
-                  },
-                ),
-            ],
-          ),
-        ),
+    if (_isPlayerSheetOpen) return;
+    unawaited(
+      showPlayerQueueBottomSheet(
+        context,
+        onVisibilityChanged: _setPlayerSheetVisibility,
       ),
     );
   }
@@ -522,7 +421,17 @@ class _FullPlayerState extends State<FullPlayer> {
   }
 
   Future<void> _showOutput(BuildContext context, Song song) async {
-    await showCastBottomSheet(context: context, song: song);
+    if (_isPlayerSheetOpen) return;
+    await showCastBottomSheet(
+      context: context,
+      song: song,
+      onVisibilityChanged: _setPlayerSheetVisibility,
+    );
+  }
+
+  void _setPlayerSheetVisibility(bool isVisible) {
+    if (!mounted || _isPlayerSheetOpen == isVisible) return;
+    setState(() => _isPlayerSheetOpen = isVisible);
   }
 }
 
@@ -556,7 +465,10 @@ class _PortraitPlayerContent extends StatelessWidget {
     return LayoutBuilder(
       key: const ValueKey('player-portrait-content'),
       builder: (context, constraints) {
-        final contentWidth = (constraints.maxWidth - 48).clamp(0.0, 600.0);
+        final contentWidth = (constraints.maxWidth - 48).clamp(
+          0.0,
+          double.infinity,
+        );
         final carouselFraction = _carouselFraction(controller);
         // The Kotlin FullPlayerAlbumCoverSection always derives artwork from
         // the available width; Column.SpaceAround allocates remaining height.
@@ -567,6 +479,10 @@ class _PortraitPlayerContent extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
+              // Kotlin's outer Box has an 8dp vertical inset while the
+              // carousel itself remains width-sized. This gives the player its
+              // 337dp artwork when playing, and lets the 0.95 scale shrink it
+              // to the measured 320dp artwork when paused.
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: SizedBox(
@@ -599,7 +515,10 @@ class _PortraitPlayerContent extends StatelessWidget {
                   _PlayerProgress(song: song),
                 ],
               ),
-              const _PlayerControlsBlock(),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 12),
+                child: _PlayerControlsBlock(),
+              ),
             ],
           ),
         );
@@ -692,6 +611,7 @@ class _SongMetadata extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final chipColor = colors.onPrimary.withValues(alpha: .8);
     return SizedBox(
+      key: const ValueKey('player-song-metadata'),
       height: 70,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -725,9 +645,7 @@ class _SongMetadata extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium!.copyWith(
                         color: colors.onPrimaryContainer.withValues(alpha: .7),
                         letterSpacing: 0,
-                        fontVariations: const [
-                          ui.FontVariation('ROND', 100),
-                        ],
+                        fontVariations: const [ui.FontVariation('ROND', 100)],
                       ),
                       gradientEdgeColor: colors.primaryContainer,
                       canScroll: controller.isPlaying,
@@ -740,6 +658,7 @@ class _SongMetadata extends StatelessWidget {
           const SizedBox(width: 12),
           if (showQueue) ...[
             _MetadataChip(
+              key: const ValueKey('player-landscape-lyrics'),
               icon: Icons.lyrics_rounded,
               background: chipColor,
               foreground: colors.primary,
@@ -753,6 +672,7 @@ class _SongMetadata extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             _MetadataChip(
+              key: const ValueKey('player-landscape-queue'),
               icon: Icons.queue_music_rounded,
               background: chipColor,
               foreground: colors.primary,
@@ -790,6 +710,7 @@ class _MetadataChip extends StatelessWidget {
     required this.foreground,
     required this.borderRadius,
     required this.onTap,
+    super.key,
   });
 
   final IconData icon;
@@ -802,7 +723,7 @@ class _MetadataChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: 50,
-      height: 44,
+      height: 42,
       child: Material(
         color: background,
         borderRadius: borderRadius,
@@ -846,16 +767,18 @@ class _PlayerProgressState extends State<_PlayerProgress> {
             : position.inMilliseconds / durationMs;
         final value = (_dragValue ?? actual).clamp(0.0, 1.0);
         return SizedBox(
+          key: const ValueKey('player-progress'),
           height: 70,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                height: 48,
+                height: 40,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   child: WavySlider(
+                    key: const ValueKey('player-progress-slider'),
                     value: value,
                     onChanged: (newValue) {
                       final step = (newValue * 20).floor();
@@ -875,9 +798,11 @@ class _PlayerProgressState extends State<_PlayerProgress> {
                     ),
                     thumbColor: colors.onPrimaryContainer,
                     isPlaying: controller.isPlaying,
-                    strokeWidth: 4.5,
-                    thumbRadius: 7.5,
-                    trackEdgePadding: 4,
+                    strokeWidth: 5,
+                    thumbRadius: 8,
+                    trackEdgePadding: 0,
+                    wavelength: 40,
+                    waveAmplitude: 4,
                   ),
                 ),
               ),
@@ -1013,6 +938,7 @@ class _PlayerControlsBlock extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: AnimatedPlaybackControls(
+              key: const ValueKey('player-transport-controls'),
               isPlaying: controller.isPlaying,
               onPrevious: controller.skipPrevious,
               onPlayPause: controller.togglePlayPause,
@@ -1032,6 +958,7 @@ class _PlayerControlsBlock extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(26, 0, 26, 6),
               child: BottomToggleRow(
+                key: const ValueKey('player-bottom-toggles'),
                 shuffleEnabled: controller.shuffleEnabled,
                 repeatMode: controller.repeatMode,
                 favorite: controller.isFavorite(song),

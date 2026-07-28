@@ -24,6 +24,8 @@ class GoogleCastService extends ChangeNotifier {
   String? lastError;
   Duration remotePosition = Duration.zero;
   bool remoteIsPlaying = false;
+  double deviceVolume = 1;
+  bool deviceMuted = false;
 
   bool get initialized => _initialized;
   bool get connected =>
@@ -54,7 +56,14 @@ class GoogleCastService extends ChangeNotifier {
           .listen((session) {
             routeName = session?.device?.friendlyName;
             connecting = false;
-            if (session == null) remoteIsPlaying = false;
+            if (session == null) {
+              remoteIsPlaying = false;
+              deviceVolume = 1;
+              deviceMuted = false;
+            } else {
+              deviceVolume = session.currentDeviceVolume.clamp(0, 1).toDouble();
+              deviceMuted = session.currentDeviceMuted;
+            }
             notifyListeners();
           });
       _mediaStatusSubscription ??= GoogleCastRemoteMediaClient
@@ -188,7 +197,22 @@ class GoogleCastService extends ChangeNotifier {
     await GoogleCastSessionManager.instance.endSessionAndStopCasting();
     routeName = null;
     remoteIsPlaying = false;
+    deviceVolume = 1;
+    deviceMuted = false;
     await _mediaServer.stop();
+    notifyListeners();
+  }
+
+  /// Mirrors the Kotlin MediaRouter route-volume control for the active Cast
+  /// route. The plugin publishes the native session state back through
+  /// [currentSessionStream], while the optimistic assignment keeps the slider
+  /// responsive between those updates.
+  void setDeviceVolume(double value) {
+    if (!connected) return;
+    final normalized = value.clamp(0.0, 1.0).toDouble();
+    GoogleCastSessionManager.instance.setDeviceVolume(normalized);
+    deviceVolume = normalized;
+    deviceMuted = normalized == 0;
     notifyListeners();
   }
 

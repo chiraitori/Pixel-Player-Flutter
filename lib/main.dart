@@ -6,6 +6,12 @@ import 'core/data/lyrics_parser.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Keep enough decoded artwork for smooth lists without allowing the image
+  // cache to dominate the process. Artwork widgets request display-sized
+  // decodes, so 64 MiB comfortably covers the visible library and player.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 256
+    ..maximumSizeBytes = 64 << 20;
   final platformServicesReady = _initializePlatformServices();
   runApp(PixelPlayApp(platformServicesReady: platformServicesReady));
 }

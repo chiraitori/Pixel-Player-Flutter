@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/state/app_controller.dart';
+import '../player/mini_player.dart';
 import '../../shared/widgets/collapsible_common_top_bar.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -109,6 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
   @override
   Widget build(BuildContext context) {
+    final controller = AppScope.of(context);
     final entries = <_SettingsEntry>[
       for (final category in SettingsScreen.categories)
         _SettingsEntry(
@@ -135,35 +138,52 @@ class _SettingsScreenState extends State<SettingsScreen>
     ];
 
     return Scaffold(
-      body: FadeTransition(
-        opacity: _opacity,
-        child: SlideTransition(
-          position: _offset,
-          child: CustomScrollView(
-            slivers: [
-              CollapsibleCommonTopBar(title: 'Settings', onBack: widget.onBack),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                sliver: SliverList.separated(
-                  itemCount: entries.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 2),
-                  itemBuilder: (context, index) {
-                    final entry = entries[index];
-                    return _SettingsCard(
-                      entry: entry,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(index == 0 ? 24 : 4),
-                        bottom: Radius.circular(
-                          index == entries.length - 1 ? 24 : 4,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+      body: Stack(
+        children: [
+          FadeTransition(
+            opacity: _opacity,
+            child: SlideTransition(
+              position: _offset,
+              child: CustomScrollView(
+                slivers: [
+                  CollapsibleCommonTopBar(
+                    title: 'Settings',
+                    onBack: widget.onBack,
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                    sliver: SliverList.separated(
+                      itemCount: entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 2),
+                      itemBuilder: (context, index) {
+                        final entry = entries[index];
+                        return _SettingsCard(
+                          entry: entry,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(index == 0 ? 24 : 4),
+                            bottom: Radius.circular(
+                              index == entries.length - 1 ? 24 : 4,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+          if (controller.currentSong != null)
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: MiniPlayer(isNavBarHidden: true),
+              ),
+            ),
+        ],
       ),
     );
   }

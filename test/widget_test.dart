@@ -6,6 +6,10 @@ import 'package:pixelplayer_flutter/core/models/song.dart';
 import 'package:pixelplayer_flutter/core/state/app_controller.dart';
 import 'package:pixelplayer_flutter/core/theme/genre_theme.dart';
 import 'package:pixelplayer_flutter/core/theme/pixelplay_theme.dart';
+import 'package:pixelplayer_flutter/features/player/cast_bottom_sheet.dart';
+import 'package:pixelplayer_flutter/features/player/sleep_timer_bottom_sheet.dart';
+import 'package:pixelplayer_flutter/features/player/song_info_bottom_sheet.dart';
+import 'package:pixelplayer_flutter/features/player/wavy_slider.dart';
 import 'package:pixelplayer_flutter/features/home/daily_mix_screen.dart';
 import 'package:pixelplayer_flutter/features/search/search_screen.dart';
 import 'package:pixelplayer_flutter/features/search/widgets/genre_categories_grid.dart';
@@ -271,6 +275,81 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a light vertical drag does not dismiss the full player', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(MockLibrary.songs.first)
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.drag(
+      find.byKey(const ValueKey('full-player-drag-surface')),
+      const Offset(0, 20),
+    );
+    await tester.pump();
+
+    expect(controller.fullPlayerVisible, isTrue);
+    expect(find.text('Now Playing'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('expanded player follows a drag and springs back like Kotlin', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(MockLibrary.songs.first)
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final surface = find.byKey(const ValueKey('full-player-drag-surface'));
+    final gesture = await tester.startGesture(tester.getCenter(surface));
+    await gesture.moveBy(const Offset(0, 32));
+    await tester.pump();
+
+    expect(controller.fullPlayerDragOffset.value, closeTo(32, .01));
+    expect(controller.fullPlayerVisible, isTrue);
+
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(controller.fullPlayerDragOffset.value, 0);
+    expect(controller.fullPlayerVisible, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('expanded player adapts to landscape and reduced motion', (
     tester,
   ) async {
@@ -305,6 +384,76 @@ void main() {
 
     expect(find.byKey(const ValueKey('landscape-player')), findsOneWidget);
     expect(find.text('Now Playing'), findsNothing);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('player-landscape-lyrics'))),
+      const Size(50, 42),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('player-landscape-queue'))),
+      const Size(50, 42),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('player sheets add Kotlin depth without exposing a black edge', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(MockLibrary.songs.first)
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    AnimatedScale playerDepth() => tester.widget<AnimatedScale>(
+      find.byKey(const ValueKey('full-player-sheet-depth')),
+    );
+
+    expect(playerDepth().scale, 1);
+    await tester.tap(find.bySemanticsLabel('Audio output'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Connect device'), findsOneWidget);
+    expect(playerDepth().scale, .972);
+    expect(playerDepth().duration, const Duration(milliseconds: 220));
+    expect(playerDepth().curve, Curves.fastOutSlowIn);
+
+    Navigator.of(tester.element(find.text('Connect device'))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('Connect device'), findsNothing);
+    expect(playerDepth().scale, 1);
+
+    await tester.tap(find.bySemanticsLabel('Open queue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Next up'), findsOneWidget);
+    expect(playerDepth().scale, .972);
+    expect(find.byKey(const ValueKey('queue-sheet-handle')), findsOneWidget);
+    final depthBackground = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('full-player-depth-background')),
+    );
+    expect(depthBackground.color, isNot(Colors.black));
+
+    Navigator.of(tester.element(find.text('Next up'))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(playerDepth().scale, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -339,6 +488,413 @@ void main() {
     expect(carousel.padEnds, isFalse);
     expect(carousel.controller!.viewportFraction, closeTo(.8, .001));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('portrait player keeps Kotlin source geometry', (tester) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(
+        MockLibrary.songs.first,
+        fromQueue: MockLibrary.songs.take(3).toList(),
+      )
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+
+    final album = tester.getRect(
+      find.byKey(const ValueKey('player-album-carousel')),
+    );
+    expect(album.left, closeTo(24, .01));
+    expect(album.width, closeTo(345, .01));
+    expect(album.height, closeTo(345, .01));
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('player-song-metadata'))),
+      const Size(345, 70),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('player-progress'))),
+      const Size(345, 70),
+    );
+    final progressSliderFinder = find.byKey(
+      const ValueKey('player-progress-slider'),
+    );
+    expect(tester.getSize(progressSliderFinder), const Size(345, 24));
+    final progressSlider = tester.widget<WavySlider>(progressSliderFinder);
+    expect(progressSlider.strokeWidth, 5);
+    expect(progressSlider.thumbRadius, 8);
+    expect(progressSlider.trackEdgePadding, 0);
+    expect(progressSlider.wavelength, 40);
+    expect(progressSlider.waveAmplitude, 4);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('player-transport-controls'))),
+      const Size(321, 80),
+    );
+
+    final toggles = tester.getRect(
+      find.byKey(const ValueKey('player-bottom-toggles')),
+    );
+    expect(toggles.left, closeTo(50, .01));
+    expect(toggles.width, closeTo(293, .01));
+    expect(toggles.height, closeTo(66, .01));
+    expect(837 - toggles.bottom, greaterThanOrEqualTo(20));
+
+    final toggleContainer = tester.getRect(
+      find.byKey(const ValueKey('player-toggle-container')),
+    );
+    final shuffle = tester.getRect(
+      find.byKey(const ValueKey('player-toggle-shuffle')),
+    );
+    final repeat = tester.getRect(
+      find.byKey(const ValueKey('player-toggle-repeat')),
+    );
+    final favorite = tester.getRect(
+      find.byKey(const ValueKey('player-toggle-favorite')),
+    );
+    expect(toggleContainer, toggles);
+    expect(shuffle.left, toggles.left + 6);
+    expect(shuffle.top, toggles.top + 6);
+    expect(shuffle.height, 54);
+    expect(repeat.left, closeTo(shuffle.right + 6, .001));
+    expect(favorite.left, closeTo(repeat.right + 6, .001));
+    expect(favorite.right, closeTo(toggles.right - 6, .001));
+
+    final toggleColors = Theme.of(
+      tester.element(find.byKey(const ValueKey('player-toggle-container'))),
+    ).colorScheme;
+    final toggleDecoration =
+        tester
+                .widget<Container>(
+                  find.byKey(const ValueKey('player-toggle-container')),
+                )
+                .decoration
+            as ShapeDecoration;
+    expect(
+      toggleDecoration.color,
+      toggleColors.surfaceContainerLowest.withValues(alpha: .7),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('portrait tablet keeps Kotlin width-derived artwork size', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(700, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(
+        MockLibrary.songs.first,
+        fromQueue: MockLibrary.songs.take(3).toList(),
+      )
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+
+    expect(
+      tester.getSize(find.byKey(const ValueKey('player-album-carousel'))),
+      const Size.square(652),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('queue sheet mirrors Kotlin header rows and floating toolbar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final queue = MockLibrary.songs.take(3).toList();
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller
+      ..playSong(queue.first, fromQueue: queue)
+      ..togglePlayPause()
+      ..showFullPlayer();
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.tap(find.bySemanticsLabel('Open queue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const ValueKey('queue-sheet')), findsOneWidget);
+    expect(find.text('Next up'), findsOneWidget);
+    expect(find.text('3 tracks lined up'), findsOneWidget);
+    expect(find.text('Current queue'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('queue-bottom-toolbar'))),
+      const Size(266, 70),
+    );
+    expect(
+      find.byIcon(Icons.drag_indicator_rounded),
+      findsNWidgets(queue.length - 1),
+    );
+
+    final currentCard = tester.widget<Material>(
+      find.byKey(ValueKey('queue-song-${queue.first.id}-0')),
+    );
+    expect(currentCard.borderRadius, BorderRadius.circular(60));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cast sheet keeps Kotlin controls geometry on a compact phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    controller.playSong(MockLibrary.songs.first);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () => showCastBottomSheet(
+                    context: context,
+                    song: controller.currentSong,
+                  ),
+                  child: const Text('Open output'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open output'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('Connect device'), findsOneWidget);
+    final sheetTitle = tester.widget<Text>(
+      find.byKey(const ValueKey('cast-sheet-title')),
+    );
+    final sheetTitleRect = tester.getRect(
+      find.byKey(const ValueKey('cast-sheet-title')),
+    );
+    final sheetHandleRect = tester.getRect(
+      find.byKey(const ValueKey('cast-sheet-handle')),
+    );
+    expect(sheetTitle.style?.fontWeight, FontWeight.w400);
+    expect(sheetTitleRect.left, 26);
+    expect(sheetHandleRect.size, const Size(32, 4));
+    expect(sheetHandleRect.center.dx, 393 / 2);
+    expect(sheetHandleRect.bottom, lessThan(sheetTitleRect.top));
+    final firstSheetPrimary = Theme.of(
+      tester.element(find.text('Connect device')),
+    ).colorScheme.primary;
+    expect(find.text('CONTROLS'), findsOneWidget);
+    expect(find.text('DEVICES'), findsOneWidget);
+    expect(tester.getSize(find.byType(PageView)), const Size(393, 313));
+    expect(find.text('Scanning nearby'), findsOneWidget);
+    expect(find.text('Nearby devices'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('cast-scanning-progress')),
+      findsOneWidget,
+    );
+    for (var index = 0; index < 3; index++) {
+      expect(
+        tester.getSize(
+          find.byKey(ValueKey('cast-scanning-placeholder-$index')),
+        ),
+        const Size(353, 68),
+      );
+    }
+
+    await tester.tap(find.text('CONTROLS'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('This phone'), findsOneWidget);
+    expect(find.text('Phone volume'), findsOneWidget);
+    expect(tester.getSize(find.byType(PageView)), const Size(393, 340));
+
+    await tester.tap(find.text('DEVICES'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Nearby devices'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Scanning nearby'), findsNothing);
+    expect(find.byKey(const ValueKey('cast-scanning-progress')), findsNothing);
+    expect(tester.getSize(find.byType(PageView)), const Size(393, 248));
+
+    controller.playSong(MockLibrary.songs[1]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    final nextSheetPrimary = Theme.of(
+      tester.element(find.text('Connect device')),
+    ).colorScheme.primary;
+    expect(nextSheetPrimary, isNot(firstSheetPrimary));
+    if (controller.isPlaying) controller.togglePlayPause();
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sleep timer keeps the Kotlin dual-slider expressive layout', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true)
+      ..setSleepAfterTracks(3);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () =>
+                      showSleepTimerBottomSheet(context, controller),
+                  child: const Text('Open timer'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open timer'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sleep timer'), findsOneWidget);
+    expect(find.text('Timer: Off'), findsOneWidget);
+    expect(find.text('Play count: 3 times'), findsOneWidget);
+    expect(find.byType(Slider), findsNWidgets(2));
+    expect(find.text('End of current track'), findsOneWidget);
+    expect(find.text('Custom time'), findsOneWidget);
+    expect(find.text('Cancel timer'), findsOneWidget);
+    expect(
+      tester.getSize(find.widgetWithText(FilledButton, 'Custom time')),
+      const Size(175.5, 68),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('song information uses Kotlin actions and metadata pages', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 837);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+    final song = MockLibrary.songs.first;
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: FilledButton(
+                  onPressed: () =>
+                      showSongInfoBottomSheet(context: context, song: song),
+                  child: const Text('Open song info'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open song info'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(song.title), findsOneWidget);
+    expect(find.text('Add to queue'), findsOneWidget);
+    expect(find.text('Play next'), findsOneWidget);
+    expect(find.text('Options'), findsOneWidget);
+    expect(find.text('Info'), findsOneWidget);
+
+    await tester.tap(find.text('Info'));
+    await tester.pumpAndSettle();
+    expect(find.text('Duration'), findsOneWidget);
+    expect(find.text('Audio format'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('queue removal supports undo and clear-except-current', () {
+    final queue = MockLibrary.songs.take(3).toList();
+    final controller = AppController(setupComplete: true)
+      ..playSong(queue.first, fromQueue: queue);
+    addTearDown(controller.dispose);
+
+    expect(controller.removeSongFromQueue(queue[1].id), isTrue);
+    expect(controller.queue.map((song) => song.id), [queue[0].id, queue[2].id]);
+    expect(controller.undoRemoveSongFromQueue(), isTrue);
+    expect(
+      controller.queue.map((song) => song.id),
+      queue.map((song) => song.id),
+    );
+
+    controller.clearQueueExceptCurrent();
+    expect(controller.queue, [queue.first]);
+    expect(controller.currentSong, queue.first);
+  });
+
+  test('counted sleep mode tracks the selected remaining songs', () {
+    final controller = AppController(setupComplete: true);
+    addTearDown(controller.dispose);
+
+    controller.setSleepAfterTracks(4);
+    expect(controller.sleepTracksRemaining, 4);
+    expect(controller.sleepTimerLabel, '4 tracks');
+
+    controller.setSleepAfterTracks(1);
+    expect(controller.sleepTracksRemaining, isNull);
+    expect(controller.sleepTimerLabel, isNull);
   });
 
   testWidgets('mini player controls keep 44dp touch targets', (tester) async {

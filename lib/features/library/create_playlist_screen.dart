@@ -52,6 +52,8 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   _StorageFilter _storage = _StorageFilter.offline;
   String _smartRule = 'top_played';
   String? _customCoverPath;
+  double _coverImageScale = 1;
+  Offset _coverImagePan = Offset.zero;
   Color? _coverColor;
   String _coverIcon = _coverIcons.keys.first;
   String _coverShape = 'Circle';
@@ -182,6 +184,8 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                   starCurve: _starCurve,
                   starRotation: _starRotation,
                   starScale: _starScale,
+                  imageScale: _coverImageScale,
+                  imagePan: _coverImagePan,
                   onPickImage: _pickCoverImage,
                 ),
               ),
@@ -293,16 +297,39 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   }
 
   Widget _imageCoverControls() {
+    final colors = Theme.of(context).colorScheme;
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainer,
+      color: colors.surfaceContainer,
       borderRadius: BorderRadius.circular(18),
       clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        onTap: _pickCoverImage,
-        leading: const Icon(Icons.add_photo_alternate_outlined),
-        title: Text(_customCoverPath == null ? 'Pick image' : 'Change image'),
-        subtitle: const Text('Choose and crop a playlist cover.'),
-        trailing: const Icon(Icons.chevron_right_rounded),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            onTap: _pickCoverImage,
+            leading: const Icon(Icons.add_photo_alternate_outlined),
+            title: Text(
+              _customCoverPath == null ? 'Pick image' : 'Change image',
+            ),
+            subtitle: const Text('Choose and crop a playlist cover.'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+          ),
+          if (_customCoverPath != null) ...[
+            Divider(
+              height: 1,
+              color: colors.outlineVariant.withValues(alpha: .4),
+            ),
+            ListTile(
+              onTap: _editCoverCrop,
+              leading: const Icon(Icons.crop_rounded),
+              title: const Text('Edit crop'),
+              subtitle: Text(
+                'Zoom ${(100 * _coverImageScale).round()}% and reposition',
+              ),
+              trailing: const Icon(Icons.tune_rounded),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -717,7 +744,35 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
       type: FileType.image,
     );
     final path = result?.files.single.path;
-    if (path != null && mounted) setState(() => _customCoverPath = path);
+    if (path == null || !mounted) return;
+    setState(() {
+      _customCoverPath = path;
+      _coverImageScale = 1;
+      _coverImagePan = Offset.zero;
+    });
+    await _editCoverCrop();
+  }
+
+  Future<void> _editCoverCrop() async {
+    final path = _customCoverPath;
+    if (path == null) return;
+    final crop = await showModalBottomSheet<_CoverCropValue>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _CoverCropEditor(
+        path: path,
+        initialScale: _coverImageScale,
+        initialPan: _coverImagePan,
+      ),
+    );
+    if (crop != null && mounted) {
+      setState(() {
+        _coverImageScale = crop.scale;
+        _coverImagePan = crop.pan;
+      });
+    }
   }
 
   void _finish() {
@@ -732,6 +787,9 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
       playlistName,
       _selected,
       coverPath: _coverTab == 1 ? _customCoverPath : null,
+      coverImageScale: _coverTab == 1 ? _coverImageScale : 1,
+      coverImagePanX: _coverTab == 1 ? _coverImagePan.dx : 0,
+      coverImagePanY: _coverTab == 1 ? _coverImagePan.dy : 0,
       coverColorValue: _coverTab == 2
           ? (_coverColor ?? Theme.of(context).colorScheme.primaryContainer)
                 .toARGB32()
@@ -954,6 +1012,8 @@ class _CoverPreview extends StatelessWidget {
     required this.starCurve,
     required this.starRotation,
     required this.starScale,
+    required this.imageScale,
+    required this.imagePan,
     required this.onPickImage,
     this.customCoverPath,
   });
@@ -968,6 +1028,8 @@ class _CoverPreview extends StatelessWidget {
   final double starCurve;
   final double starRotation;
   final double starScale;
+  final double imageScale;
+  final Offset imagePan;
   final VoidCallback onPickImage;
 
   @override
@@ -976,7 +1038,7 @@ class _CoverPreview extends StatelessWidget {
     if (tab == 1 && path != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        child: Image.file(File(path), fit: BoxFit.cover),
+        child: _CroppedCoverImage(path: path, scale: imageScale, pan: imagePan),
       );
     }
     if (tab == 1) {
@@ -1061,6 +1123,219 @@ class _CoverPreview extends StatelessWidget {
           context,
         ).colorScheme.onSurfaceVariant.withValues(alpha: .5),
       ),
+    );
+  }
+}
+
+class _CoverCropValue {
+  const _CoverCropValue({required this.scale, required this.pan});
+
+  final double scale;
+  final Offset pan;
+}
+
+/// Square crop editor matching the source app's crop/pan/zoom cover flow.
+/// The values are normalized, so the same visual crop survives every cover size.
+class _CoverCropEditor extends StatefulWidget {
+  const _CoverCropEditor({
+    required this.path,
+    required this.initialScale,
+    required this.initialPan,
+  });
+
+  final String path;
+  final double initialScale;
+  final Offset initialPan;
+
+  @override
+  State<_CoverCropEditor> createState() => _CoverCropEditorState();
+}
+
+class _CoverCropEditorState extends State<_CoverCropEditor> {
+  static const _minScale = 1.0;
+  static const _maxScale = 3.0;
+  static const _previewSide = 296.0;
+
+  late double _scale = widget.initialScale
+      .clamp(_minScale, _maxScale)
+      .toDouble();
+  late Offset _pan = _constrainPan(widget.initialPan, _scale);
+  late double _gestureStartScale;
+
+  Offset _constrainPan(Offset value, double scale) {
+    // A small amount of pan is available at 1x for non-square source images;
+    // larger zooms get a matching larger travel range without exposing a gap.
+    final limit = (.18 + (scale - 1) * .42).clamp(.18, .5).toDouble();
+    return Offset(value.dx.clamp(-limit, limit), value.dy.clamp(-limit, limit));
+  }
+
+  void _reset() {
+    setState(() {
+      _scale = 1;
+      _pan = Offset.zero;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainerLow,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colors.onSurfaceVariant.withValues(alpha: .38),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Crop cover',
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _reset,
+                    icon: const Icon(Icons.restart_alt_rounded),
+                    tooltip: 'Reset crop',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Pinch to zoom or drag to reposition.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Center(
+                child: SizedBox.square(
+                  dimension: _previewSide,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onScaleStart: (details) {
+                        _gestureStartScale = _scale;
+                      },
+                      onScaleUpdate: (details) {
+                        final nextScale = (_gestureStartScale * details.scale)
+                            .clamp(_minScale, _maxScale)
+                            .toDouble();
+                        final nextPan = _constrainPan(
+                          _pan + details.focalPointDelta / _previewSide,
+                          nextScale,
+                        );
+                        setState(() {
+                          _scale = nextScale;
+                          _pan = nextPan;
+                        });
+                      },
+                      child: _CroppedCoverImage(
+                        path: widget.path,
+                        scale: _scale,
+                        pan: _pan,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  const Icon(Icons.zoom_in_rounded),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Slider(
+                      value: _scale,
+                      min: _minScale,
+                      max: _maxScale,
+                      onChanged: (value) => setState(() {
+                        _scale = value;
+                        _pan = _constrainPan(_pan, value);
+                      }),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 46,
+                    child: Text(
+                      '${(_scale * 100).round()}%',
+                      textAlign: TextAlign.end,
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(
+                        context,
+                        _CoverCropValue(scale: _scale, pan: _pan),
+                      ),
+                      child: const Text('Done'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CroppedCoverImage extends StatelessWidget {
+  const _CroppedCoverImage({
+    required this.path,
+    required this.scale,
+    required this.pan,
+  });
+
+  final String path;
+  final double scale;
+  final Offset pan;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = constraints.biggest.shortestSide;
+        return ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Transform.translate(
+            offset: Offset(pan.dx * side, pan.dy * side),
+            child: Transform.scale(
+              scale: scale,
+              child: Image.file(File(path), fit: BoxFit.cover),
+            ),
+          ),
+        );
+      },
     );
   }
 }

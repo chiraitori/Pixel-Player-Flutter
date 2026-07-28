@@ -52,7 +52,8 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
   DateTime? _lastSeekTime;
   bool _disableAnimations = false;
 
-  double get _currentValue => (_gestureValue ?? _renderedProgress).clamp(0.0, 1.0);
+  double get _currentValue =>
+      (_gestureValue ?? _renderedProgress).clamp(0.0, 1.0);
 
   @override
   void initState() {
@@ -62,7 +63,9 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
 
     _wave = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2400),
+      // Kotlin WavySliderExpressive moves at wavelength / 2 per second,
+      // which completes one phase in exactly two seconds.
+      duration: const Duration(milliseconds: 2000),
     );
     _interaction = AnimationController(
       vsync: this,
@@ -79,7 +82,8 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
   void _onProgressTick() {
     if (_gestureValue != null) return;
     setState(() {
-      _renderedProgress = _renderedProgress +
+      _renderedProgress =
+          _renderedProgress +
           (_targetProgress - _renderedProgress) * _progressTween.value;
     });
   }
@@ -103,7 +107,9 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
 
       // Check if seek was recent and audio engine hasn't caught up yet
       if (_lastSeekTarget >= 0 && _lastSeekTime != null) {
-        final elapsed = DateTime.now().difference(_lastSeekTime!).inMilliseconds;
+        final elapsed = DateTime.now()
+            .difference(_lastSeekTime!)
+            .inMilliseconds;
         final diff = (newTarget - _lastSeekTarget).abs();
         if (elapsed < 3000 && diff > 0.04) {
           // Keep current target while waiting for engine catch-up
@@ -192,45 +198,52 @@ class _WavySliderState extends State<WavySlider> with TickerProviderStateMixin {
       24.0,
       math.max(widget.thumbRadius * 2, widget.interactingThumbHeight),
     );
-    return Semantics(
-      slider: true,
-      label: 'Playback position',
-      value: '${(_currentValue * 100).round()}%',
-      child: SizedBox(
-        height: height,
-        child: LayoutBuilder(
-          builder: (context, constraints) => GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (details) =>
-                _start(details.localPosition, constraints.maxWidth),
-            onPanUpdate: (details) =>
-                _update(details.localPosition, constraints.maxWidth),
-            onPanEnd: (_) => _finish(),
-            onPanCancel: _finish,
-            child: AnimatedBuilder(
-              animation: Listenable.merge([_wave, _interaction, _progressTween]),
-              builder: (context, child) => CustomPaint(
-                painter: _WavySliderPainter(
-                  value: _currentValue,
-                  wavePhase: _wave.value,
-                  interaction: Curves.fastOutSlowIn.transform(
-                    _interaction.value,
+    return RepaintBoundary(
+      child: Semantics(
+        slider: true,
+        label: 'Playback position',
+        value: '${(_currentValue * 100).round()}%',
+        child: SizedBox(
+          height: height,
+          child: LayoutBuilder(
+            builder: (context, constraints) => GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (details) =>
+                  _start(details.localPosition, constraints.maxWidth),
+              onPanUpdate: (details) =>
+                  _update(details.localPosition, constraints.maxWidth),
+              onPanEnd: (_) => _finish(),
+              onPanCancel: _finish,
+              child: AnimatedBuilder(
+                animation: Listenable.merge([
+                  _wave,
+                  _interaction,
+                  _progressTween,
+                ]),
+                builder: (context, child) => CustomPaint(
+                  painter: _WavySliderPainter(
+                    value: _currentValue,
+                    wavePhase: _wave.value,
+                    interaction: Curves.fastOutSlowIn.transform(
+                      _interaction.value,
+                    ),
+                    activeColor: widget.activeColor,
+                    inactiveColor: widget.inactiveColor,
+                    thumbColor: widget.thumbColor,
+                    strokeWidth: widget.strokeWidth,
+                    thumbRadius: widget.thumbRadius,
+                    edgePadding: widget.trackEdgePadding,
+                    wavelength: widget.wavelength,
+                    amplitude:
+                        widget.isPlaying &&
+                            !_disableAnimations &&
+                            _gestureValue == null
+                        ? widget.waveAmplitude
+                        : 0,
+                    interactingThumbHeight: widget.interactingThumbHeight,
                   ),
-                  activeColor: widget.activeColor,
-                  inactiveColor: widget.inactiveColor,
-                  thumbColor: widget.thumbColor,
-                  strokeWidth: widget.strokeWidth,
-                  thumbRadius: widget.thumbRadius,
-                  edgePadding: widget.trackEdgePadding,
-                  wavelength: widget.wavelength,
-                  amplitude: widget.isPlaying &&
-                          !_disableAnimations &&
-                          _gestureValue == null
-                      ? widget.waveAmplitude
-                      : 0,
-                  interactingThumbHeight: widget.interactingThumbHeight,
+                  size: Size.infinite,
                 ),
-                size: Size.infinite,
               ),
             ),
           ),
@@ -299,8 +312,7 @@ class _WavySliderPainter extends CustomPainter {
         final taper = (distanceToEnd / wavelength).clamp(0.0, 1.0);
         final currentAmp = amplitude * taper;
 
-        final radians =
-            ((x - start) / wavelength - wavePhase) * math.pi * 2;
+        final radians = ((x - start) / wavelength - wavePhase) * math.pi * 2;
         final y = centerY + math.sin(radians) * currentAmp;
         if (x == start) {
           path.moveTo(x, y);
@@ -314,7 +326,7 @@ class _WavySliderPainter extends CustomPainter {
     // 2. Draw Inactive Track (starts after thumb gap)
     final inactivePaint = Paint()
       ..color = inactiveColor
-      ..strokeWidth = strokeWidth * 0.6
+      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
     final inactiveStart = math.min(end, thumbX + thumbWidth / 2 + gap);
@@ -327,8 +339,11 @@ class _WavySliderPainter extends CustomPainter {
       // Draw stop dot at the end of the inactive track
       canvas.drawCircle(
         Offset(end, centerY),
-        strokeWidth * 0.45,
-        Paint()..color = inactiveColor.withValues(alpha: math.min(1.0, inactiveColor.a * 1.8)),
+        1.5,
+        Paint()
+          ..color = inactiveColor.withValues(
+            alpha: math.min(1.0, inactiveColor.a * 1.8),
+          ),
       );
     }
 

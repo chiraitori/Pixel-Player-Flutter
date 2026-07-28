@@ -1,9 +1,40 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 enum _PlaybackButtonType { previous, playPause, next }
+
+/// Flutter equivalent of Material 3 Expressive's fast spatial spring.
+///
+/// Compose uses a spring with stiffness 800 and damping ratio 0.6 for these
+/// transport controls. Keeping that response here preserves the small
+/// overshoot when a button expands instead of flattening it into an easing
+/// curve.
+class _ExpressiveFastSpatialCurve extends Curve {
+  const _ExpressiveFastSpatialCurve();
+
+  static const _stiffness = 800.0;
+  static const _dampingRatio = .6;
+  static const _responseSeconds = .36;
+
+  @override
+  double transformInternal(double t) {
+    final angularFrequency = math.sqrt(_stiffness);
+    final dampedFrequency =
+        angularFrequency * math.sqrt(1 - _dampingRatio * _dampingRatio);
+    final elapsed = t * _responseSeconds;
+    final decay = math.exp(-_dampingRatio * angularFrequency * elapsed);
+    final response =
+        1 -
+        decay *
+            (math.cos(dampedFrequency * elapsed) +
+                (_dampingRatio * angularFrequency / dampedFrequency) *
+                    math.sin(dampedFrequency * elapsed));
+    return response;
+  }
+}
 
 class AnimatedPlaybackControls extends StatefulWidget {
   const AnimatedPlaybackControls({
@@ -76,13 +107,12 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     setState(() => _lastClicked = button);
     _releaseTimer?.cancel();
-    final releaseDelay =
-        reduceMotion
-            ? Duration.zero
-            : button == _PlaybackButtonType.previous ||
-                  button == _PlaybackButtonType.next
-            ? const Duration(milliseconds: 600)
-            : const Duration(milliseconds: 220);
+    final releaseDelay = reduceMotion
+        ? Duration.zero
+        : button == _PlaybackButtonType.previous ||
+              button == _PlaybackButtonType.next
+        ? const Duration(milliseconds: 600)
+        : const Duration(milliseconds: 220);
     _releaseTimer = Timer(releaseDelay, () {
       if (!mounted) return;
       setState(() {
@@ -96,16 +126,22 @@ class _AnimatedPlaybackControlsState extends State<AnimatedPlaybackControls> {
 
     switch (button) {
       case _PlaybackButtonType.previous:
-        Timer(reduceMotion ? Duration.zero : const Duration(milliseconds: 180), () {
-          if (mounted) widget.onPrevious();
-        });
+        Timer(
+          reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
+          () {
+            if (mounted) widget.onPrevious();
+          },
+        );
       case _PlaybackButtonType.playPause:
         if (widget.hapticFeedbackEnabled) HapticFeedback.selectionClick();
         widget.onPlayPause();
       case _PlaybackButtonType.next:
-        Timer(reduceMotion ? Duration.zero : const Duration(milliseconds: 180), () {
-          if (mounted) widget.onNext();
-        });
+        Timer(
+          reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
+          () {
+            if (mounted) widget.onNext();
+          },
+        );
     }
   }
 
@@ -211,18 +247,20 @@ class _AnimatedTransportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 360),
+      curve: const _ExpressiveFastSpatialCurve(),
       width: width,
       height: height,
       decoration: ShapeDecoration(
         color: color,
         shape: smoothShape
             ? (radius >= 50
-                ? const StadiumBorder()
-                : RoundedSuperellipseBorder(
-                    borderRadius: BorderRadius.circular(radius),
-                  ))
+                  ? const StadiumBorder()
+                  : RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(radius),
+                    ))
             : const StadiumBorder(),
       ),
       clipBehavior: Clip.antiAlias,
@@ -234,7 +272,9 @@ class _AnimatedTransportButton extends StatelessWidget {
             child: AnimatedSwitcher(
               duration: reduceMotion
                   ? Duration.zero
-                  : const Duration(milliseconds: 180),
+                  : const Duration(milliseconds: 220),
+              switchInCurve: Curves.fastOutSlowIn,
+              switchOutCurve: Curves.fastOutSlowIn,
               child: Icon(
                 icon,
                 key: ValueKey(icon),

@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:just_audio/just_audio.dart' hide PlaybackEvent;
+import 'package:just_audio_background/just_audio_background.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/song.dart';
@@ -14,6 +14,7 @@ import '../data/lyrics_service.dart';
 import '../services/audio_meta_service.dart';
 import '../services/google_cast_service.dart';
 import '../services/song_metadata_writer.dart';
+import '../theme/player_palette_cache.dart';
 import '../../data/library/media_store_music_library.dart';
 import '../../data/library/music_library_cache.dart';
 import '../../data/library/music_library_repository.dart';
@@ -64,6 +65,8 @@ class AppController extends ChangeNotifier {
   ThemeMode themeMode = ThemeMode.system;
   int selectedTab = 0;
   Song? currentSong;
+  String? _playerPaletteSongId;
+  Color? _playerPaletteSeed;
   List<Song> queue = const [];
   bool isPlaying = false;
   bool shuffleEnabled = false;
@@ -96,6 +99,7 @@ class AppController extends ChangeNotifier {
   final ValueNotifier<Duration> positionListenable = ValueNotifier(
     Duration.zero,
   );
+  final ValueNotifier<double> fullPlayerDragOffset = ValueNotifier<double>(0);
   Duration get position => positionListenable.value;
   set position(Duration value) => positionListenable.value = value;
   Timer? _progressTimer;
@@ -104,9 +108,13 @@ class AppController extends ChangeNotifier {
   Timer? _sleepTimerTicker;
   DateTime? sleepTimerEnd;
   bool sleepAtEndOfTrack = false;
+  int? sleepTracksRemaining;
+  bool _sleepCountedTrackCompletionHandled = false;
   Song? _dismissedSong;
   List<Song> _dismissedQueue = const [];
   Duration _dismissedPosition = Duration.zero;
+  Song? _lastRemovedQueueSong;
+  int? _lastRemovedQueueIndex;
   bool showDismissUndoBar = false;
   static const dismissUndoDuration = Duration(milliseconds: 4000);
   SharedPreferencesAsync? _preferences;
@@ -117,7 +125,10 @@ class AppController extends ChangeNotifier {
   AndroidEqualizer? _equalizer;
   AndroidLoudnessEnhancer? _loudnessEnhancer;
   List<Song> _audioQueue = const [];
+  int _audioLoadGeneration = 0;
+  int? _activeAudioLoadGeneration;
   final List<StreamSubscription<dynamic>> _playerSubscriptions = [];
+  StreamSubscription<dynamic>? _notificationActionSubscription;
 
   static const _setupCompleteKey = 'setup_complete';
   static const _themeModeKey = 'app_theme_mode';
@@ -231,6 +242,10 @@ class AppController extends ChangeNotifier {
 
   String? get sleepTimerLabel {
     if (sleepAtEndOfTrack) return 'End of track';
+    final tracksRemaining = sleepTracksRemaining;
+    if (tracksRemaining != null) {
+      return '$tracksRemaining ${tracksRemaining == 1 ? 'track' : 'tracks'}';
+    }
     final end = sleepTimerEnd;
     if (end == null) return null;
     final remaining = end.difference(DateTime.now());
@@ -509,7 +524,17 @@ class AppController extends ChangeNotifier {
           .whereType<Song>()
           .toList(growable: false);
       currentSong = byId[storedCurrentSong];
+      if (currentSong case final restored?) {
+        _syncPlayerPalette(restored);
+      }
       position = Duration(milliseconds: storedPositionMs);
+      final restoredSong = currentSong;
+      if (restoredSong != null && restoredSong.isPlayable) {
+        // Kotlin probes the active MediaItem even when the session is restored
+        // in a paused state, so sample rate/codec are already visible before
+        // the user presses Play.
+        unawaited(_probeAudioMeta(restoredSong));
+      }
     }
   }
 
@@ -522,14 +547,22 @@ class AppController extends ChangeNotifier {
         ..add(
           session.becomingNoisyEventStream.listen((_) {
             if (boolSetting('playback_pause_on_headphones_disconnect', true) &&
-                isPlaying) {
+                isPlaying &&
+                _activeAudioLoadGeneration == null) {
               togglePlayPause();
             }
           }),
         )
         ..add(
           session.interruptionEventStream.listen((event) {
-            if (!event.begin || !isPlaying) return;
+            // Creating the Android background player can briefly emit an
+            // audio-focus interruption. Do not turn that into a pause while
+            // setAudioSources is still preparing the first playlist.
+            if (!event.begin ||
+                !isPlaying ||
+                _activeAudioLoadGeneration != null) {
+              return;
+            }
             if (event.type == AudioInterruptionType.pause ||
                 event.type == AudioInterruptionType.unknown) {
               togglePlayPause();
@@ -937,6 +970,9 @@ class AppController extends ChangeNotifier {
     String name,
     Iterable<String> songIds, {
     String? coverPath,
+    double coverImageScale = 1,
+    double coverImagePanX = 0,
+    double coverImagePanY = 0,
     int? coverColorValue,
     String? coverIconName,
     String coverShape = 'smoothRect',
@@ -960,6 +996,9 @@ class AppController extends ChangeNotifier {
         name: cleanName,
         songs: selectedSongs,
         coverPath: coverPath,
+        coverImageScale: coverImageScale,
+        coverImagePanX: coverImagePanX,
+        coverImagePanY: coverImagePanY,
         coverColorValue: coverColorValue,
         coverIconName: coverIconName,
         coverShape: coverShape,
@@ -1138,6 +1177,10 @@ class AppController extends ChangeNotifier {
               name: map['name'] as String,
               songs: ids.map((id) => byId[id]).whereType<Song>().toList(),
               coverPath: map['coverPath'] as String?,
+              coverImageScale:
+                  (map['coverImageScale'] as num?)?.toDouble() ?? 1,
+              coverImagePanX: (map['coverImagePanX'] as num?)?.toDouble() ?? 0,
+              coverImagePanY: (map['coverImagePanY'] as num?)?.toDouble() ?? 0,
               coverColorValue: (map['coverColorValue'] as num?)?.toInt(),
               coverIconName: map['coverIconName'] as String?,
               coverShape: map['coverShape'] as String? ?? 'smoothRect',
@@ -1161,6 +1204,9 @@ class AppController extends ChangeNotifier {
           'name': playlist.name,
           'songIds': playlist.songs.map((song) => song.id).toList(),
           'coverPath': playlist.coverPath,
+          'coverImageScale': playlist.coverImageScale,
+          'coverImagePanX': playlist.coverImagePanX,
+          'coverImagePanY': playlist.coverImagePanY,
           'coverColorValue': playlist.coverColorValue,
           'coverIconName': playlist.coverIconName,
           'coverShape': playlist.coverShape,
@@ -1199,6 +1245,9 @@ class AppController extends ChangeNotifier {
             'name': playlist.name,
             'songIds': playlist.songs.map((song) => song.id).toList(),
             'coverPath': playlist.coverPath,
+            'coverImageScale': playlist.coverImageScale,
+            'coverImagePanX': playlist.coverImagePanX,
+            'coverImagePanY': playlist.coverImagePanY,
             'coverColorValue': playlist.coverColorValue,
             'coverIconName': playlist.coverIconName,
             'coverShape': playlist.coverShape,
@@ -1306,6 +1355,7 @@ class AppController extends ChangeNotifier {
       }
     }
     currentSong = song;
+    _syncPlayerPalette(song);
     if (_preferences != null) {
       unawaited(_prefetchLyrics(song));
     }
@@ -1350,6 +1400,41 @@ class AppController extends ChangeNotifier {
     }
     _persistPlaybackSession();
     notifyListeners();
+  }
+
+  /// The shared counterpart of Kotlin's ThemeStateHolder album-color flow.
+  ///
+  /// Every player surface reads this one seed.  Updating the fallback seed is
+  /// synchronous with [currentSong], then the extracted artwork color replaces
+  /// it only when it still belongs to the active track.  This prevents lyrics,
+  /// the full player, and the mini player from briefly using different tracks'
+  /// Material You palettes during a skip.
+  Color playerPaletteSeedFor(Song song) {
+    final fallback = song.colors.isEmpty
+        ? Colors.deepPurple
+        : song.colors.first;
+    return _playerPaletteSongId == song.id
+        ? _playerPaletteSeed ?? fallback
+        : fallback;
+  }
+
+  void _syncPlayerPalette(Song song) {
+    if (_playerPaletteSongId == song.id) return;
+    final fallback = song.colors.isEmpty
+        ? Colors.deepPurple
+        : song.colors.first;
+    _playerPaletteSongId = song.id;
+    _playerPaletteSeed = fallback;
+    final requestedSongId = song.id;
+    unawaited(() async {
+      final extractedSeed = await PlayerPaletteCache.seedFor(song);
+      if (_playerPaletteSongId != requestedSongId ||
+          _playerPaletteSeed == extractedSeed) {
+        return;
+      }
+      _playerPaletteSeed = extractedSeed;
+      notifyListeners();
+    }());
   }
 
   Future<void> _prefetchLyrics(Song song) async {
@@ -1496,6 +1581,11 @@ class AppController extends ChangeNotifier {
       return;
     }
     isPlaying = !isPlaying;
+    if (isPlaying && currentSong!.isPlayable) {
+      // A restored session may not have passed through playSong(), which is
+      // where the normal metadata probe starts.
+      unawaited(_probeAudioMeta(currentSong!));
+    }
     final cast = GoogleCastService.instance;
     if (cast.connected) {
       unawaited(isPlaying ? cast.play() : cast.pause());
@@ -1505,7 +1595,10 @@ class AppController extends ChangeNotifier {
     }
     final player = _audioPlayer;
     if (currentSong!.isPlayable) {
-      if (player == null && isPlaying) {
+      // The background service may exist after process restoration while the
+      // Dart player still has no source. Calling play() on that idle player is
+      // a no-op, so restore the persisted queue first.
+      if (isPlaying && (player == null || player.audioSource == null)) {
         unawaited(
           _loadAndPlay(
             currentSong!,
@@ -1545,6 +1638,7 @@ class AppController extends ChangeNotifier {
     if (!_favoriteSongIds.add(song.id)) {
       _favoriteSongIds.remove(song.id);
     }
+    if (currentSong?.id == song.id) _syncNotificationFavorite(song);
     _persist(
       _preferences?.setStringList(_favoritesKey, _favoriteSongIds.toList()),
     );
@@ -1597,6 +1691,46 @@ class AppController extends ChangeNotifier {
       _audioQueue = List<Song>.of(queue);
     }
     notifyListeners();
+  }
+
+  bool removeSongFromQueue(String songId) {
+    final active = currentSong;
+    final index = queue.indexWhere((song) => song.id == songId);
+    if (index < 0 || queue[index].id == active?.id) return false;
+
+    final updated = List<Song>.of(queue);
+    _lastRemovedQueueSong = updated.removeAt(index);
+    _lastRemovedQueueIndex = index;
+    queue = updated;
+    _reloadActiveQueue();
+    return true;
+  }
+
+  bool undoRemoveSongFromQueue() {
+    final song = _lastRemovedQueueSong;
+    final index = _lastRemovedQueueIndex;
+    if (song == null || index == null) return false;
+
+    final updated = List<Song>.of(queue);
+    updated.insert(index.clamp(0, updated.length), song);
+    queue = updated;
+    _lastRemovedQueueSong = null;
+    _lastRemovedQueueIndex = null;
+    _reloadActiveQueue();
+    return true;
+  }
+
+  void clearQueueExceptCurrent() {
+    final active = currentSong;
+    if (active == null) {
+      queue = const [];
+      notifyListeners();
+      return;
+    }
+    queue = <Song>[active];
+    _lastRemovedQueueSong = null;
+    _lastRemovedQueueIndex = null;
+    _reloadActiveQueue();
   }
 
   void addSongToQueue(Song song) {
@@ -1723,11 +1857,13 @@ class AppController extends ChangeNotifier {
 
   void showFullPlayer() {
     if (currentSong == null) return;
+    fullPlayerDragOffset.value = 0;
     fullPlayerVisible = true;
     notifyListeners();
   }
 
   void hideFullPlayer() {
+    fullPlayerDragOffset.value = 0;
     fullPlayerVisible = false;
     notifyListeners();
   }
@@ -1784,6 +1920,7 @@ class AppController extends ChangeNotifier {
     if (song == null || _dismissedQueue.isEmpty) return false;
 
     currentSong = song;
+    _syncPlayerPalette(song);
     queue = List<Song>.of(_dismissedQueue);
     position = _dismissedPosition;
     isPlaying = true;
@@ -1832,6 +1969,17 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Matches PixelPlayer's counted-play timer: playback stops after the
+  /// requested number of completed tracks. A count of one is the inactive
+  /// slider position in the original sheet, so it simply clears the mode.
+  void setSleepAfterTracks(int count) {
+    cancelSleepTimer(notify: false);
+    final normalized = count.clamp(1, 10);
+    sleepTracksRemaining = normalized > 1 ? normalized : null;
+    _sleepCountedTrackCompletionHandled = false;
+    notifyListeners();
+  }
+
   void cancelSleepTimer({bool notify = true}) {
     _sleepTimer?.cancel();
     _sleepTimerTicker?.cancel();
@@ -1839,6 +1987,8 @@ class AppController extends ChangeNotifier {
     _sleepTimerTicker = null;
     sleepTimerEnd = null;
     sleepAtEndOfTrack = false;
+    sleepTracksRemaining = null;
+    _sleepCountedTrackCompletionHandled = false;
     if (notify) notifyListeners();
   }
 
@@ -1874,9 +2024,13 @@ class AppController extends ChangeNotifier {
           : null,
     );
     _audioPlayer = player;
+    _notificationActionSubscription ??= JustAudioBackground
+        .notificationActionStream
+        .listen(_handleNotificationAction);
     _playerSubscriptions
       ..add(
         player.playingStream.listen((playing) {
+          if (_activeAudioLoadGeneration != null) return;
           if (isPlaying == playing) return;
           isPlaying = playing;
           notifyListeners();
@@ -1884,6 +2038,10 @@ class AppController extends ChangeNotifier {
       )
       ..add(
         player.positionStream.listen((newPosition) {
+          // Replacing a playlist can briefly emit zero before just_audio has
+          // applied initialPosition. Never expose that transient position to
+          // the seek bar or synced lyrics.
+          if (_activeAudioLoadGeneration != null) return;
           position = newPosition;
           if (newPosition.inSeconds != _lastPersistedPositionSecond &&
               newPosition.inSeconds % 5 == 0) {
@@ -1898,14 +2056,34 @@ class AppController extends ChangeNotifier {
             position = duration;
             cancelSleepTimer(notify: false);
           }
+          final tracksRemaining = sleepTracksRemaining;
+          if (tracksRemaining != null &&
+              duration != null &&
+              duration - newPosition <= const Duration(milliseconds: 350) &&
+              !_sleepCountedTrackCompletionHandled) {
+            _sleepCountedTrackCompletionHandled = true;
+            if (tracksRemaining <= 1) {
+              unawaited(player.pause());
+              position = duration;
+              cancelSleepTimer(notify: false);
+            } else {
+              sleepTracksRemaining = tracksRemaining - 1;
+              notifyListeners();
+            }
+          }
         }),
       )
       ..add(
         player.currentIndexStream.listen((index) {
+          // setAudioSources may expose an intermediate playlist index while
+          // loading. Wait for the requested initial item to become ready.
+          if (_activeAudioLoadGeneration != null) return;
           if (index == null || index < 0 || index >= _audioQueue.length) return;
           final song = _audioQueue[index];
           if (currentSong?.id == song.id) return;
+          _sleepCountedTrackCompletionHandled = false;
           currentSong = song;
+          _syncPlayerPalette(song);
           position = Duration.zero;
           notifyListeners();
         }),
@@ -1920,21 +2098,55 @@ class AppController extends ChangeNotifier {
     return player;
   }
 
+  void _handleNotificationAction(dynamic event) {
+    if (event is! Map ||
+        event['type'] != JustAudioBackground.notificationEventType) {
+      return;
+    }
+    switch (event['action']) {
+      case JustAudioBackground.notificationFavoriteAction:
+        toggleFavorite();
+      case JustAudioBackground.notificationCloseAction:
+        dismissPlaylist();
+    }
+  }
+
+  void _syncNotificationFavorite(Song song) {
+    if (_audioPlayer == null) return;
+    unawaited(
+      JustAudioBackground.setNotificationFavorite(
+        _favoriteSongIds.contains(song.id),
+      ),
+    );
+  }
+
   Future<void> _loadAndPlay(
     Song song,
     List<Song> requestedQueue, {
     Duration initialPosition = Duration.zero,
     bool autoPlay = true,
   }) async {
+    final loadGeneration = ++_audioLoadGeneration;
+    _activeAudioLoadGeneration = loadGeneration;
+
+    bool isLatestLoad() => loadGeneration == _audioLoadGeneration;
+    void finishLoad() {
+      if (_activeAudioLoadGeneration == loadGeneration) {
+        _activeAudioLoadGeneration = null;
+      }
+    }
+
     // `runApp` is intentionally not held behind platform initialization. Wait
     // here instead, immediately before the first native audio player is made.
     await _platformServicesReady;
+    if (!isLatestLoad()) return;
     final playable = requestedQueue
         .where((item) => item.playbackUri != null)
         .toList(growable: false);
     final index = playable.indexWhere((item) => item.id == song.id);
     final uri = song.playbackUri;
     if (uri == null || index < 0) {
+      finishLoad();
       debugPrint('PixelPlayer: Cannot play – uri=$uri, index=$index');
       isPlaying = false;
       notifyListeners();
@@ -1951,6 +2163,7 @@ class AppController extends ChangeNotifier {
       final freshGoogleDriveToken = containsGoogleDrive
           ? await GoogleDriveAuthService.instance.refreshAccessToken()
           : null;
+      if (!isLatestLoad()) return;
 
       debugPrint(
         'PixelPlayer: Loading ${playable.length} tracks, '
@@ -2002,19 +2215,39 @@ class AppController extends ChangeNotifier {
         initialPosition: initialPosition,
         shuffleOrder: DefaultShuffleOrder(),
       );
+      if (!isLatestLoad()) return;
 
       debugPrint('PixelPlayer: Audio sources loaded successfully');
 
       try {
         await _applyEqualizerSettings();
       } catch (_) {}
+      if (!isLatestLoad()) return;
       await player.setLoopMode(switch (repeatMode) {
         1 => LoopMode.one,
         2 => LoopMode.all,
         _ => LoopMode.off,
       });
+      if (!isLatestLoad()) return;
       await player.setShuffleModeEnabled(shuffleEnabled);
+      if (!isLatestLoad()) return;
       if (shuffleEnabled) await player.shuffle();
+      if (!isLatestLoad()) return;
+
+      // Playlist replacement can briefly emit index 0 and position zero before
+      // just_audio applies the requested initial state. Publish only the
+      // settled values so synced lyrics never select an earlier line.
+      currentSong = playable[index];
+      _syncPlayerPalette(playable[index]);
+      _syncNotificationFavorite(playable[index]);
+      final nativePosition = player.position;
+      position = (nativePosition - initialPosition).inMilliseconds.abs() <= 750
+          ? nativePosition
+          : initialPosition;
+      isPlaying = autoPlay;
+      finishLoad();
+      notifyListeners();
+
       if (autoPlay) {
         await player.play();
         debugPrint('PixelPlayer: play() called');
@@ -2022,6 +2255,8 @@ class AppController extends ChangeNotifier {
         await player.pause();
       }
     } catch (e, stackTrace) {
+      if (!isLatestLoad()) return;
+      finishLoad();
       debugPrint('PixelPlayer: Error playing audio: $e');
       debugPrint('PixelPlayer: Stack trace: $stackTrace');
       isPlaying = false;
@@ -2110,6 +2345,7 @@ class AppController extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimerTicker?.cancel();
     GoogleCastService.instance.removeListener(_syncGoogleCastState);
+    unawaited(_notificationActionSubscription?.cancel() ?? Future.value());
     for (final subscription in _playerSubscriptions) {
       unawaited(subscription.cancel());
     }
@@ -2117,6 +2353,7 @@ class AppController extends ChangeNotifier {
     if (player != null) unawaited(player.dispose());
     _persistPlaybackSession();
     positionListenable.dispose();
+    fullPlayerDragOffset.dispose();
     super.dispose();
   }
 }

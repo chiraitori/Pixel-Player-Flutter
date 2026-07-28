@@ -10,6 +10,7 @@ import '../../core/theme/pixelplay_theme.dart';
 import '../../core/theme/rounded_star_clipper.dart';
 import '../player/full_player.dart';
 import '../player/mini_player.dart';
+import '../player/song_info_bottom_sheet.dart';
 import '../../shared/widgets/artwork.dart';
 
 class ArtistDetailScreen extends StatelessWidget {
@@ -717,6 +718,10 @@ class _ArtistSongItem extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.info_outline_rounded),
                 title: const Text('Song information'),
+                onTap: () {
+                  Navigator.pop(context);
+                  showSongInfoBottomSheet(context: context, song: song);
+                },
                 subtitle: Text(
                   '${song.durationLabel} • ${song.year} • Track ${song.track}',
                 ),

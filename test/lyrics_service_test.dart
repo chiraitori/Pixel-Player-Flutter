@@ -63,6 +63,32 @@ void main() {
     expect(results, isEmpty);
   });
 
+  test('automatic matching rejects lyrics whose timeline exceeds the song', () {
+    final song = _song(title: 'Nekojarashi', artist: '7co');
+    final results = service.rankRemoteResultsForTesting(song, [
+      _result(
+        title: 'Nekojarashi',
+        artist: '7co',
+        raw: '[00:20.00]First line\n[04:03.00]Wrong final line',
+      ),
+    ]);
+
+    expect(results, isEmpty);
+  });
+
+  test('stored lyrics with an impossible timeline are discarded', () async {
+    const id = 'invalid-lyrics-timeline';
+    SharedPreferences.setMockInitialValues({
+      'lyrics_content_$id': '[00:20.00]First line\n[04:03.00]Wrong final line',
+    });
+    final song = _song(id: id, title: 'Nekojarashi', artist: '7co');
+
+    expect(await service.lyricsFor(song, includeRemote: false), isNull);
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('lyrics_content_$id'), isNull);
+  });
+
   test('automatic matching rejects original lyrics for a remix', () {
     final song = _song(
       title: 'Midnight City (Remix)',
@@ -122,16 +148,17 @@ Song _song({
   );
 }
 
-LyricsSearchResult _result({required String title, required String artist}) {
+LyricsSearchResult _result({
+  required String title,
+  required String artist,
+  String raw = '[00:01.00]First line\n[00:05.00]Second line',
+}) {
   return LyricsSearchResult(
     id: Object.hash(title, artist),
     trackName: title,
     artistName: artist,
     albumName: 'Album',
     duration: const Duration(seconds: 180),
-    document: LyricsParser.parse(
-      '[00:01.00]First line\n[00:05.00]Second line',
-      fromRemote: true,
-    ),
+    document: LyricsParser.parse(raw, fromRemote: true),
   );
 }

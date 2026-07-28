@@ -144,6 +144,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     AlbumArtCollage(
                       key: const ValueKey('home-album-art-collage'),
                       songs: yourMixSongs,
+                      // `HomeScreen.kt` supplies this inset explicitly while
+                      // the reusable Compose component itself defaults to 0.
+                      padding: 14,
                       pattern: CollagePattern.fromStorageKey(
                         controller.stringSetting(
                           'collage_pattern',
@@ -368,7 +371,12 @@ class _YourMixHeader extends StatelessWidget {
                       fontWeight: FontWeight.normal,
                       fontVariations: const [
                         ui.FontVariation('wght', 636),
-                        ui.FontVariation('wdth', 87),
+                        // Kotlin's `rememberYourMixTitleStyle` deliberately
+                        // uses the wide Google Sans Flex axis (152).  The
+                        // previous 87 value condensed the hero headline and
+                        // was the source of the visibly squashed "Your Mix"
+                        // treatment on Flutter.
+                        ui.FontVariation('wdth', 152),
                         ui.FontVariation('ROND', 50),
                         ui.FontVariation('XTRA', 520),
                         ui.FontVariation('YOPQ', 90),

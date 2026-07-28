@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../core/models/song.dart';
@@ -8,6 +10,7 @@ import '../../shared/widgets/playlist_cover.dart';
 import '../../shared/widgets/playlist_multi_selection_sheet.dart';
 import '../../shared/widgets/song_tile.dart';
 import '../player/mini_player.dart';
+import '../player/song_info_bottom_sheet.dart';
 import '../shell/player_internal_navigation_bar.dart';
 import 'widgets/library_empty_state.dart';
 import 'widgets/tab_animation.dart';
@@ -65,11 +68,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
   late final ScrollController _songsScroll;
   late final ScrollController _favoritesScroll;
   LibrarySection _section = LibrarySection.songs;
+  List<LibrarySection> _sectionOrder = List.of(LibrarySection.values);
+  bool _sectionOrderLoaded = false;
   bool _grid = true;
-  String _sort = 'Title';
+  final Map<LibrarySection, String> _sortBySection = {
+    for (final section in LibrarySection.values) section: 'Title',
+  };
   int _storageFilter = 0;
   final List<Song> _selectedSongs = [];
   final Set<String> _selectedMediaIds = {};
+
+  String get _sort => _sortBySection[_section] ?? 'Title';
 
   @override
   void initState() {
@@ -87,6 +96,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
       ..dispose();
     _favoritesScroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_sectionOrderLoaded) return;
+    _sectionOrderLoaded = true;
+    final saved = AppScope.of(context).stringListSetting(
+      'library_tab_order',
+      LibrarySection.values.map((section) => section.name).toList(),
+    );
+    final restored = <LibrarySection>[
+      for (final name in saved)
+        ...LibrarySection.values.where((section) => section.name == name),
+      for (final section in LibrarySection.values)
+        if (!saved.contains(section.name)) section,
+    ];
+    _sectionOrder = restored.toSet().toList(growable: false);
+    final controller = AppScope.of(context);
+    for (final section in LibrarySection.values) {
+      _sortBySection[section] = controller.stringSetting(
+        'library_sort_${section.name}',
+        'Title',
+      );
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pages.jumpToPage(_sectionOrder.indexOf(_section));
+    });
   }
 
   @override
@@ -176,12 +213,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 bottom: false,
                 child: _LibraryHeader(
                   section: _section,
+                  sectionOrder: _sectionOrder,
                   compact: compact,
                   onOpenSettings: widget.onOpenSettings,
                   onOpenSections: () => _showSectionPicker(context),
                   onSelectSection: (section) {
                     _pages.animateToPage(
-                      LibrarySection.values.indexOf(section),
+                      _sectionOrder.indexOf(section),
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
                     );
@@ -252,47 +290,54 @@ class _LibraryScreenState extends State<LibraryScreen> {
                               controller: _pages,
                               onPageChanged: (index) {
                                 setState(() {
-                                  _section = LibrarySection.values[index];
+                                  _section = _sectionOrder[index];
                                   _clearSelection();
                                 });
                               },
-                              children: [
-                                _SongsTab(
-                                  songs: songs,
-                                  controller: _songsScroll,
-                                  selectedSongs: _selectedSongs,
-                                  onToggleSelection: _toggleSongSelection,
-                                ),
-                                _AlbumsTab(
-                                  albums: albums,
-                                  grid: _grid,
-                                  selectedIds: _selectedMediaIds,
-                                  onOpen: widget.onOpenAlbum,
-                                  onToggleSelection: _toggleMediaSelection,
-                                ),
-                                _ArtistsTab(
-                                  artists: artists,
-                                  onOpen: widget.onOpenArtist,
-                                ),
-                                _PlaylistsTab(
-                                  playlists: playlists,
-                                  selectedIds: _selectedMediaIds,
-                                  onOpen: widget.onOpenPlaylist,
-                                  onToggleSelection: _toggleMediaSelection,
-                                  onCreate: widget.onCreatePlaylist,
-                                ),
-                                _FoldersTab(songs: songs),
-                                _SongsTab(
-                                  songs: favoriteSongs,
-                                  controller: _favoritesScroll,
-                                  selectedSongs: _selectedSongs,
-                                  onToggleSelection: _toggleSongSelection,
-                                  emptyIcon: Icons.favorite_rounded,
-                                  emptyTitle: 'No liked songs yet',
-                                  emptySubtitle:
-                                      'Tap the heart icon while playing a song to save it here.',
-                                ),
-                              ],
+                              children: () {
+                                final pages = <LibrarySection, Widget>{
+                                  LibrarySection.songs: _SongsTab(
+                                    songs: songs,
+                                    controller: _songsScroll,
+                                    selectedSongs: _selectedSongs,
+                                    onToggleSelection: _toggleSongSelection,
+                                  ),
+                                  LibrarySection.albums: _AlbumsTab(
+                                    albums: albums,
+                                    grid: _grid,
+                                    selectedIds: _selectedMediaIds,
+                                    onOpen: widget.onOpenAlbum,
+                                    onToggleSelection: _toggleMediaSelection,
+                                  ),
+                                  LibrarySection.artists: _ArtistsTab(
+                                    artists: artists,
+                                    onOpen: widget.onOpenArtist,
+                                  ),
+                                  LibrarySection.playlists: _PlaylistsTab(
+                                    playlists: playlists,
+                                    selectedIds: _selectedMediaIds,
+                                    onOpen: widget.onOpenPlaylist,
+                                    onToggleSelection: _toggleMediaSelection,
+                                    onCreate: widget.onCreatePlaylist,
+                                  ),
+                                  LibrarySection.folders: _FoldersTab(
+                                    songs: songs,
+                                  ),
+                                  LibrarySection.favorites: _SongsTab(
+                                    songs: favoriteSongs,
+                                    controller: _favoritesScroll,
+                                    selectedSongs: _selectedSongs,
+                                    onToggleSelection: _toggleSongSelection,
+                                    emptyIcon: Icons.favorite_rounded,
+                                    emptyTitle: 'No liked songs yet',
+                                    emptySubtitle:
+                                        'Tap the heart icon while playing a song to save it here.',
+                                  ),
+                                };
+                                return _sectionOrder
+                                    .map((section) => pages[section]!)
+                                    .toList(growable: false);
+                              }(),
                             ),
                           ),
                         ],
@@ -728,63 +773,144 @@ class _LibraryScreenState extends State<LibraryScreen> {
     showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Library tabs',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Choose a section or reorder tabs.',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 4, 18, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Library tabs',
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
-              ),
-              const SizedBox(height: 16),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  childAspectRatio: 1.05,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
+                const SizedBox(height: 4),
+                Text(
+                  'Choose a section or reorder tabs.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-                itemCount: LibrarySection.values.length,
-                itemBuilder: (context, index) {
-                  final section = LibrarySection.values[index];
-                  final selected = section == _section;
-                  return Material(
-                    color: selected
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainer,
-                    borderRadius: BorderRadius.circular(22),
-                    child: InkWell(
+                const SizedBox(height: 16),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _showTabReorderSheet(context),
+                    icon: const Icon(Icons.drag_handle_rounded),
+                    label: const Text('Reorder tabs'),
+                  ),
+                ),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    childAspectRatio: 1.05,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                  ),
+                  itemCount: _sectionOrder.length,
+                  itemBuilder: (context, index) {
+                    final section = _sectionOrder[index];
+                    final selected = section == _section;
+                    return Material(
+                      color: selected
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context).colorScheme.surfaceContainer,
                       borderRadius: BorderRadius.circular(22),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _pages.animateToPage(
-                          index,
-                          duration: const Duration(milliseconds: 220),
-                          curve: Curves.easeOutCubic,
-                        );
-                      },
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(section.icon),
-                          const SizedBox(height: 8),
-                          Text(section.label),
-                        ],
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(22),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _pages.animateToPage(
+                            index,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                          );
+                        },
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(section.icon),
+                            const SizedBox(height: 8),
+                            Text(section.label),
+                          ],
+                        ),
                       ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showTabReorderSheet(BuildContext context) async {
+    final order = List<LibrarySection>.of(_sectionOrder);
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SizedBox(
+          height: 430,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'Reorder library tabs',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+              ),
+              Expanded(
+                child: ReorderableListView.builder(
+                  itemCount: order.length,
+                  onReorderItem: (oldIndex, newIndex) => setSheetState(() {
+                    final item = order.removeAt(oldIndex);
+                    order.insert(newIndex, item);
+                  }),
+                  itemBuilder: (context, index) {
+                    final section = order[index];
+                    return ListTile(
+                      key: ValueKey(section),
+                      leading: Icon(section.icon),
+                      title: Text(section.label),
+                      trailing: const Icon(Icons.drag_handle_rounded),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => setSheetState(() {
+                        order
+                          ..clear()
+                          ..addAll(LibrarySection.values);
+                      }),
+                      child: const Text('Reset'),
                     ),
-                  );
-                },
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: () {
+                        final controller = AppScope.of(this.context);
+                        setState(() => _sectionOrder = List.of(order));
+                        controller.setStringListSetting(
+                          'library_tab_order',
+                          order.map((section) => section.name),
+                        );
+                        _pages.jumpToPage(_sectionOrder.indexOf(_section));
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -811,7 +937,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
               RadioGroup<String>(
                 groupValue: _sort,
                 onChanged: (value) {
-                  if (value != null) setState(() => _sort = value);
+                  if (value != null) {
+                    final section = _section;
+                    setState(() => _sortBySection[section] = value);
+                    AppScope.of(
+                      this.context,
+                    ).setStringSetting('library_sort_${section.name}', value);
+                  }
                   Navigator.pop(context);
                 },
                 child: Column(
@@ -909,6 +1041,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _LibraryHeader extends StatelessWidget {
   const _LibraryHeader({
     required this.section,
+    required this.sectionOrder,
     required this.compact,
     required this.onOpenSettings,
     required this.onOpenSections,
@@ -916,6 +1049,7 @@ class _LibraryHeader extends StatelessWidget {
   });
 
   final LibrarySection section;
+  final List<LibrarySection> sectionOrder;
   final bool compact;
   final VoidCallback onOpenSettings;
   final VoidCallback onOpenSections;
@@ -964,11 +1098,15 @@ class _LibraryHeader extends StatelessWidget {
           ),
           if (compact)
             Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 18),
+              // CompactLibraryPagerIndicator in LibraryScreen.kt uses an
+              // 8dp top / 10dp bottom inset. Keeping the same 22dp strip
+              // prevents the rounded content surface from starting 8dp too
+              // low below the page dots.
+              padding: const EdgeInsets.only(top: 8, bottom: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  for (final item in LibrarySection.values)
+                  for (final item in sectionOrder)
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutCubic,
@@ -992,11 +1130,11 @@ class _LibraryHeader extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 children: [
-                  for (final item in LibrarySection.values)
+                  for (final item in sectionOrder)
                     _LibraryTabButton(
                       section: item,
-                      index: LibrarySection.values.indexOf(item),
-                      selectedIndex: LibrarySection.values.indexOf(section),
+                      index: sectionOrder.indexOf(item),
+                      selectedIndex: sectionOrder.indexOf(section),
                       onTap: () => onSelectSection(item),
                     ),
                   IconButton(
@@ -1084,6 +1222,18 @@ class _CompactLibraryPill extends StatelessWidget {
                                 fontSize: 26,
                                 height: 28 / 26,
                                 letterSpacing: -.2,
+                                // Match LibraryNavigationPill's non-compressed
+                                // Compose style. Without this explicit width
+                                // axis, Flutter rendered the section title much
+                                // narrower than the Kotlin "Songs" pill.
+                                fontVariations: const [
+                                  ui.FontVariation('wght', 400),
+                                  ui.FontVariation('wdth', 100),
+                                  ui.FontVariation('ROND', 100),
+                                  ui.FontVariation('XTRA', 520),
+                                  ui.FontVariation('YOPQ', 90),
+                                  ui.FontVariation('YTLC', 505),
+                                ],
                               ),
                             ),
                           ),
@@ -1564,78 +1714,109 @@ class _PlaylistsTab extends StatelessWidget {
   }
 }
 
-class _FoldersTab extends StatelessWidget {
+class _FoldersTab extends StatefulWidget {
   const _FoldersTab({required this.songs});
 
   final List<Song> songs;
 
   @override
+  State<_FoldersTab> createState() => _FoldersTabState();
+}
+
+class _FoldersTabState extends State<_FoldersTab> {
+  String? _currentDirectory;
+
+  @override
   Widget build(BuildContext context) {
-    final grouped = <String, List<Song>>{};
-    for (final song in songs) {
+    final directories = <String, List<Song>>{};
+    for (final song in widget.songs) {
       final path = song.path;
-      if (path == null || !path.contains('/')) continue;
-      final separator = path.lastIndexOf('/');
-      final directory = path.substring(0, separator);
-      final name = directory.substring(directory.lastIndexOf('/') + 1);
-      grouped.putIfAbsent(name, () => []).add(song);
+      if (path == null) continue;
+      final normalized = path.replaceAll('\\', '/');
+      final separator = normalized.lastIndexOf('/');
+      if (separator < 1) continue;
+      final directory = normalized
+          .substring(0, separator)
+          .replaceFirst(RegExp(r'^/+'), '');
+      directories.putIfAbsent(directory, () => []).add(song);
     }
-    final folders = grouped.entries.toList()
-      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-    if (folders.isEmpty) {
+    if (directories.isEmpty) {
       return const LibraryEmptyState(
         icon: Icons.folder_rounded,
         title: 'No folders found',
         subtitle: 'Internal storage folders with music will appear here.',
       );
     }
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        8,
-        16,
-        _libraryContentBottomPadding(context),
-      ),
-      itemCount: folders.length,
-      itemBuilder: (context, index) {
-        final folder = folders[index];
-        return Card(
-          child: ListTile(
-            leading: const Icon(Icons.folder_rounded, size: 36),
-            title: Text(folder.key),
-            subtitle: Text('${folder.value.length} songs'),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              builder: (context) => DraggableScrollableSheet(
-                expand: false,
-                initialChildSize: .72,
-                maxChildSize: .94,
-                builder: (context, scrollController) => Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.folder_rounded),
-                      title: Text(folder.key),
-                      subtitle: Text('${folder.value.length} songs'),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        controller: scrollController,
-                        itemCount: folder.value.length,
-                        itemBuilder: (context, index) => SongTile(
-                          song: folder.value[index],
-                          queue: folder.value,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+    final current = _currentDirectory;
+    final directSongs = directories[current] ?? const <Song>[];
+    final children = <String, List<Song>>{};
+    for (final entry in directories.entries) {
+      final path = entry.key;
+      final prefix = current == null ? '' : '$current/';
+      if (current != null && !path.startsWith(prefix)) continue;
+      final remainder = current == null ? path : path.substring(prefix.length);
+      final separator = remainder.indexOf('/');
+      final name = separator < 0
+          ? remainder
+          : remainder.substring(0, separator);
+      final childPath = current == null ? name : '$current/$name';
+      children.putIfAbsent(childPath, () => []).addAll(entry.value);
+    }
+    final folders = children.entries.toList()
+      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+    final queue = [...directSongs, ...folders.expand((entry) => entry.value)];
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      child: ListView.builder(
+        key: ValueKey(current),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          _libraryContentBottomPadding(context),
+        ),
+        itemCount:
+            folders.length + directSongs.length + (current == null ? 0 : 1),
+        itemBuilder: (context, index) {
+          if (current != null && index == 0) {
+            return Material(
+              color: Colors.transparent,
+              child: ListTile(
+                leading: const Icon(Icons.arrow_back_rounded),
+                title: const Text('Back'),
+                subtitle: Text(current.substring(current.lastIndexOf('/') + 1)),
+                onTap: () => setState(() {
+                  final parent = current.lastIndexOf('/');
+                  _currentDirectory = parent < 0
+                      ? null
+                      : current.substring(0, parent);
+                }),
               ),
+            );
+          }
+          final offset = current == null ? index : index - 1;
+          if (offset >= folders.length) {
+            return Material(
+              color: Colors.transparent,
+              child: SongTile(
+                song: directSongs[offset - folders.length],
+                queue: queue,
+              ),
+            );
+          }
+          final folder = folders[offset];
+          final name = folder.key.substring(folder.key.lastIndexOf('/') + 1);
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.folder_rounded, size: 36),
+              title: Text(name),
+              subtitle: Text('${folder.value.length} songs'),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () => setState(() => _currentDirectory = folder.key),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -1937,6 +2118,10 @@ class _LibrarySongItem extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.info_outline_rounded),
                 title: const Text('Song information'),
+                onTap: () {
+                  Navigator.pop(context);
+                  showSongInfoBottomSheet(context: context, song: song);
+                },
                 subtitle: Text(
                   '${song.album} • ${song.durationLabel} • ${song.year}',
                 ),

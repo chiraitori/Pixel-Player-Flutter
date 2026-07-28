@@ -28,6 +28,18 @@ class Artwork extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeColors = Theme.of(context).colorScheme;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final cacheWidth = _decodeDimension(width ?? size, devicePixelRatio);
+    final cacheHeight = _decodeDimension(height ?? size, devicePixelRatio);
+    final gradientColors = switch (colors) {
+      [] => [themeColors.primary, themeColors.secondary],
+      [final color] => [
+        color,
+        Color.lerp(color, themeColors.surface, .24) ?? color,
+      ],
+      _ => colors,
+    };
     final placeholder = Container(
       width: width ?? size,
       height: height ?? size,
@@ -36,11 +48,11 @@ class Artwork extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: colors,
+          colors: gradientColors,
         ),
         boxShadow: [
           BoxShadow(
-            color: colors.last.withValues(alpha: .22),
+            color: gradientColors.last.withValues(alpha: .22),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -83,6 +95,12 @@ class Artwork extends StatelessWidget {
                   bytes,
                   width: width ?? size ?? double.infinity,
                   height: height ?? size ?? double.infinity,
+                  // MediaStore returns artwork up to 1024px. Decode only the
+                  // pixels this surface can display; otherwise every 44dp list
+                  // thumbnail occupies roughly the same memory as full-player
+                  // artwork.
+                  cacheWidth: cacheWidth,
+                  cacheHeight: cacheHeight,
                   fit: fit,
                   gaplessPlayback: true,
                   filterQuality: FilterQuality.medium,
@@ -93,6 +111,17 @@ class Artwork extends StatelessWidget {
           );
     if (heroTag == null) return art;
     return Hero(tag: heroTag!, child: art);
+  }
+
+  int? _decodeDimension(double? logicalPixels, double devicePixelRatio) {
+    if (logicalPixels == null ||
+        !logicalPixels.isFinite ||
+        logicalPixels <= 0 ||
+        !devicePixelRatio.isFinite ||
+        devicePixelRatio <= 0) {
+      return null;
+    }
+    return (logicalPixels * devicePixelRatio).ceil().clamp(1, 1024);
   }
 }
 

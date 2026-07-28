@@ -128,7 +128,10 @@ class LyricsService {
     if (!forceRefresh) {
       if (!isNeteaseTrack) {
         final cached = _memoryCache[song.id];
-        if (cached != null) return cached;
+        if (cached != null) {
+          if (_lyricsTimelineFitsSong(song, cached)) return cached;
+          _memoryCache.remove(song.id);
+        }
       }
       final stored = await _storedLyrics(song);
       if (stored != null) return _remember(song, stored);
@@ -167,7 +170,7 @@ class LyricsService {
 
   Future<LyricsDocument?> fetchBestRemote(Song song) async {
     final amllLyrics = await _fetchAmlldbLyrics(song);
-    if (amllLyrics != null) {
+    if (amllLyrics != null && _lyricsTimelineFitsSong(song, amllLyrics)) {
       await saveLyrics(song, amllLyrics);
       return _remember(song, amllLyrics);
     }
@@ -364,7 +367,11 @@ class LyricsService {
   }
 
   Future<void> saveLyrics(Song song, LyricsDocument document) async {
-    if (!document.hasLyrics || document.raw.trim().isEmpty) return;
+    if (!document.hasLyrics ||
+        document.raw.trim().isEmpty ||
+        !_lyricsTimelineFitsSong(song, document)) {
+      return;
+    }
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(_storageKey(song.id), document.raw.trim());
     _memoryCache[song.id] = LyricsParser.parse(document.raw);
@@ -474,10 +481,16 @@ class LyricsService {
 
   Future<LyricsDocument?> _storedLyrics(Song song) async {
     final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(_storageKey(song.id));
+    final key = _storageKey(song.id);
+    final raw = preferences.getString(key);
     if (raw == null || raw.trim().isEmpty) return null;
     final parsed = LyricsParser.parse(raw);
-    return parsed.hasLyrics ? parsed : null;
+    if (!parsed.hasLyrics || !_lyricsTimelineFitsSong(song, parsed)) {
+      await preferences.remove(key);
+      _memoryCache.remove(song.id);
+      return null;
+    }
+    return parsed;
   }
 
   Future<LyricsDocument?> _embeddedLyrics(Song song) async {
@@ -739,6 +752,7 @@ class LyricsService {
     if (!result.document.hasLyrics || result.duration <= Duration.zero) {
       return null;
     }
+    if (!_lyricsTimelineFitsSong(song, result.document)) return null;
     if (!_variantDescriptorsCompatible(song, result)) return null;
 
     final durationSeconds = song.duration.inMilliseconds / 1000;
@@ -764,6 +778,13 @@ class LyricsService {
         (artistScore ?? 0) +
         math.max(0, tolerance - durationDifference).toInt() +
         (result.document.hasSynced ? 10 : 0);
+  }
+
+  bool _lyricsTimelineFitsSong(Song song, LyricsDocument lyrics) {
+    if (!lyrics.hasSynced || song.duration <= Duration.zero) return true;
+    final durationMs = song.duration.inMilliseconds;
+    final toleranceMs = (durationMs * .05).round().clamp(8000, 30000);
+    return lyrics.synced.last.time.inMilliseconds <= durationMs + toleranceMs;
   }
 
   int? _titleMatchScore(

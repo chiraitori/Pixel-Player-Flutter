@@ -44,6 +44,8 @@ dev_dependencies:
 dependency_overrides:
   on_audio_query_android:
     path: plugins/on_audio_query_android
+  just_audio_background:
+    path: plugins/just_audio_background
 
 flutter:
   uses-material-design: true

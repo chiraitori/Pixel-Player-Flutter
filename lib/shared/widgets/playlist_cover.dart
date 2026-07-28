@@ -39,7 +39,11 @@ class PlaylistCover extends StatelessWidget {
     final hasCustomShape = path != null || colorValue != null;
     final content = switch ((path, colorValue)) {
       (final String imagePath, _) when File(imagePath).existsSync() =>
-        Image.file(File(imagePath), fit: BoxFit.cover),
+        _CroppedPlaylistImage(
+          path: imagePath,
+          scale: playlist.coverImageScale,
+          pan: Offset(playlist.coverImagePanX, playlist.coverImagePanY),
+        ),
       (_, final int value) => _iconCover(value),
       _ => _PlaylistArtCollage(songs: playlist.songs),
     };
@@ -77,6 +81,37 @@ class PlaylistCover extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CroppedPlaylistImage extends StatelessWidget {
+  const _CroppedPlaylistImage({
+    required this.path,
+    required this.scale,
+    required this.pan,
+  });
+
+  final String path;
+  final double scale;
+  final Offset pan;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final side = constraints.biggest.shortestSide;
+        return ColoredBox(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          child: Transform.translate(
+            offset: Offset(pan.dx * side, pan.dy * side),
+            child: Transform.scale(
+              scale: scale.clamp(1, 3).toDouble(),
+              child: Image.file(File(path), fit: BoxFit.cover),
+            ),
+          ),
+        );
+      },
     );
   }
 }

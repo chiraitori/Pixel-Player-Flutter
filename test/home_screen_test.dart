@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pixelplayer_flutter/core/state/app_controller.dart';
@@ -24,6 +26,11 @@ void main() {
 
     expect(find.byKey(const ValueKey('home-beta')), findsOneWidget);
     expect(find.text('Your\nMix'), findsOneWidget);
+    final yourMixTitle = tester.widget<Text>(find.text('Your\nMix'));
+    expect(
+      yourMixTitle.style?.fontVariations,
+      contains(const ui.FontVariation('wdth', 152)),
+    );
     expect(
       tester.getSize(find.byKey(const ValueKey('home-your-mix-header'))).height,
       256,

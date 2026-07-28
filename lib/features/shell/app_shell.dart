@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/state/app_controller.dart';
@@ -29,6 +31,32 @@ import '../settings/settings_screen.dart';
 import '../settings/word_delimiter_config_screen.dart';
 import '../stats/stats_screen.dart';
 import 'player_internal_navigation_bar.dart';
+import 'player_route_overlay.dart';
+
+/// Material 3 Expressive default spatial spring used by the Kotlin player
+/// sheet (stiffness 380, damping ratio 0.8).
+class _ExpressiveDefaultSpatialCurve extends Curve {
+  const _ExpressiveDefaultSpatialCurve();
+
+  static const _stiffness = 380.0;
+  static const _dampingRatio = .8;
+  static const _responseSeconds = .46;
+
+  @override
+  double transformInternal(double t) {
+    final angularFrequency = math.sqrt(_stiffness);
+    final dampedFrequency =
+        angularFrequency * math.sqrt(1 - _dampingRatio * _dampingRatio);
+    final elapsed = t * _responseSeconds;
+    final decay = math.exp(-_dampingRatio * angularFrequency * elapsed);
+    return (1 -
+            decay *
+                (math.cos(dampedFrequency * elapsed) +
+                    (_dampingRatio * angularFrequency / dampedFrequency) *
+                        math.sin(dampedFrequency * elapsed)))
+        .clamp(0, 1);
+  }
+}
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key});
@@ -39,7 +67,8 @@ class AppShell extends StatelessWidget {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final transitionDuration = reduceMotion
         ? Duration.zero
-        : const Duration(milliseconds: 360);
+        : const Duration(milliseconds: 460);
+    const spatialCurve = _ExpressiveDefaultSpatialCurve();
     final systemNavBarInset = sanitizeNavigationBarBottomInset(
       MediaQuery.viewPaddingOf(context).bottom,
     );
@@ -73,39 +102,50 @@ class AppShell extends StatelessWidget {
             IndexedStack(
               index: controller.selectedTab,
               children: [
-                HomeScreen(
-                  onOpenSettings: () => _openSettings(context),
-                  onOpenDailyMix: () => _push(context, const DailyMixScreen()),
-                  onOpenRecentlyPlayed: () =>
-                      _push(context, const RecentlyPlayedScreen()),
-                  onOpenStats: () => _push(context, const StatsScreen()),
-                  onOpenAccounts: () => _push(context, const AccountsScreen()),
-                  onOpenAlbum: (id) =>
-                      _openMedia(context, MediaDetailType.album, id),
+                TickerMode(
+                  enabled: controller.selectedTab == 0,
+                  child: HomeScreen(
+                    onOpenSettings: () => _openSettings(context),
+                    onOpenDailyMix: () =>
+                        _push(context, const DailyMixScreen()),
+                    onOpenRecentlyPlayed: () =>
+                        _push(context, const RecentlyPlayedScreen()),
+                    onOpenStats: () => _push(context, const StatsScreen()),
+                    onOpenAccounts: () =>
+                        _push(context, const AccountsScreen()),
+                    onOpenAlbum: (id) =>
+                        _openMedia(context, MediaDetailType.album, id),
+                  ),
                 ),
-                SearchScreen(
-                  onOpenAlbum: (id) =>
-                      _openMedia(context, MediaDetailType.album, id),
-                  onOpenArtist: (id) =>
-                      _openMedia(context, MediaDetailType.artist, id),
-                  onOpenPlaylist: (id) =>
-                      _openMedia(context, MediaDetailType.playlist, id),
-                  onOpenGenre: (id) =>
-                      _openMedia(context, MediaDetailType.genre, id),
-                  onOpenSettings: () => _openSettings(context),
+                TickerMode(
+                  enabled: controller.selectedTab == 1,
+                  child: SearchScreen(
+                    onOpenAlbum: (id) =>
+                        _openMedia(context, MediaDetailType.album, id),
+                    onOpenArtist: (id) =>
+                        _openMedia(context, MediaDetailType.artist, id),
+                    onOpenPlaylist: (id) =>
+                        _openMedia(context, MediaDetailType.playlist, id),
+                    onOpenGenre: (id) =>
+                        _openMedia(context, MediaDetailType.genre, id),
+                    onOpenSettings: () => _openSettings(context),
+                  ),
                 ),
-                LibraryScreen(
-                  onOpenSettings: () => _openSettings(context),
-                  onOpenAlbum: (id) =>
-                      _openMedia(context, MediaDetailType.album, id),
-                  onOpenArtist: (id) =>
-                      _openMedia(context, MediaDetailType.artist, id),
-                  onOpenPlaylist: (id) =>
-                      _openMedia(context, MediaDetailType.playlist, id),
-                  onOpenGenre: (id) =>
-                      _openMedia(context, MediaDetailType.genre, id),
-                  onCreatePlaylist: () =>
-                      _push(context, const CreatePlaylistScreen()),
+                TickerMode(
+                  enabled: controller.selectedTab == 2,
+                  child: LibraryScreen(
+                    onOpenSettings: () => _openSettings(context),
+                    onOpenAlbum: (id) =>
+                        _openMedia(context, MediaDetailType.album, id),
+                    onOpenArtist: (id) =>
+                        _openMedia(context, MediaDetailType.artist, id),
+                    onOpenPlaylist: (id) =>
+                        _openMedia(context, MediaDetailType.playlist, id),
+                    onOpenGenre: (id) =>
+                        _openMedia(context, MediaDetailType.genre, id),
+                    onCreatePlaylist: () =>
+                        _push(context, const CreatePlaylistScreen()),
+                  ),
                 ),
               ],
             ),
@@ -113,42 +153,49 @@ class AppShell extends StatelessWidget {
               ignoring: !controller.fullPlayerVisible,
               child: AnimatedSlide(
                 duration: transitionDuration,
-                curve: Curves.fastOutSlowIn,
+                curve: spatialCurve,
                 offset: controller.fullPlayerVisible
                     ? Offset.zero
                     : const Offset(0, 1),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(end: controller.fullPlayerVisible ? 0 : 32),
-                  duration: transitionDuration,
-                  curve: Curves.fastOutSlowIn,
-                  builder: (context, topRadius, child) => Material(
-                    color: Colors.transparent,
-                    shape: RoundedSuperellipseBorder(
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(topRadius),
-                      ),
-                    ),
-                    clipBehavior: Clip.antiAlias,
+                child: AnimatedBuilder(
+                  animation: controller.fullPlayerDragOffset,
+                  builder: (context, child) => Transform.translate(
+                    offset: Offset(0, controller.fullPlayerDragOffset.value),
                     child: child,
                   ),
-                  child: TickerMode(
-                    enabled: controller.fullPlayerVisible,
-                    child: Builder(
-                      builder: (context) {
-                        final mediaQuery = MediaQuery.of(context);
-                        final padding = mediaQuery.padding;
-                        return MediaQuery(
-                          data: mediaQuery.copyWith(
-                            padding: EdgeInsets.fromLTRB(
-                              padding.left,
-                              padding.top,
-                              padding.right,
-                              mediaQuery.viewPadding.bottom,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: controller.fullPlayerVisible ? 0 : 32),
+                    duration: transitionDuration,
+                    curve: spatialCurve,
+                    builder: (context, topRadius, child) => Material(
+                      color: Colors.transparent,
+                      shape: RoundedSuperellipseBorder(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(topRadius),
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: child,
+                    ),
+                    child: TickerMode(
+                      enabled: controller.fullPlayerVisible,
+                      child: Builder(
+                        builder: (context) {
+                          final mediaQuery = MediaQuery.of(context);
+                          final padding = mediaQuery.padding;
+                          return MediaQuery(
+                            data: mediaQuery.copyWith(
+                              padding: EdgeInsets.fromLTRB(
+                                padding.left,
+                                padding.top,
+                                padding.right,
+                                mediaQuery.viewPadding.bottom,
+                              ),
                             ),
-                          ),
-                          child: const FullPlayer(),
-                        );
-                      },
+                            child: const FullPlayer(),
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -160,7 +207,7 @@ class AppShell extends StatelessWidget {
           ignoring: controller.fullPlayerVisible,
           child: AnimatedSlide(
             duration: transitionDuration,
-            curve: Curves.fastOutSlowIn,
+            curve: spatialCurve,
             offset: controller.fullPlayerVisible
                 ? const Offset(0, 1)
                 : Offset.zero,
@@ -187,7 +234,7 @@ class AppShell extends StatelessWidget {
                               ).animate(
                                 CurvedAnimation(
                                   parent: animation,
-                                  curve: Curves.easeOutCubic,
+                                  curve: spatialCurve,
                                 ),
                               ),
                           child: child,
@@ -214,8 +261,8 @@ class AppShell extends StatelessWidget {
                   AnimatedPadding(
                     duration: reduceMotion
                         ? Duration.zero
-                        : const Duration(milliseconds: 400),
-                    curve: Curves.fastOutSlowIn,
+                        : const Duration(milliseconds: 460),
+                    curve: spatialCurve,
                     padding: EdgeInsets.only(
                       left: controller.navBarStyle == PixelNavBarStyle.floating
                           ? floatingHorizontalPadding
@@ -232,15 +279,15 @@ class AppShell extends StatelessWidget {
                       tween: Tween(end: navBarTopRadius),
                       duration: reduceMotion
                           ? Duration.zero
-                          : const Duration(milliseconds: 400),
-                      curve: Curves.fastOutSlowIn,
+                          : const Duration(milliseconds: 460),
+                      curve: spatialCurve,
                       builder: (context, animatedTopRadius, child) {
                         return TweenAnimationBuilder<double>(
                           tween: Tween(end: navBarBottomRadius),
                           duration: reduceMotion
                               ? Duration.zero
-                              : const Duration(milliseconds: 400),
-                          curve: Curves.fastOutSlowIn,
+                              : const Duration(milliseconds: 460),
+                          curve: spatialCurve,
                           child: child,
                           builder: (context, animatedBottomRadius, child) {
                             final borderRadius = BorderRadius.vertical(
@@ -349,6 +396,19 @@ class AppShell extends StatelessWidget {
   }
 
   void _push(BuildContext context, Widget screen) {
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    final screenHostsPlayer =
+        screen is DailyMixScreen ||
+        screen is RecentlyPlayedScreen ||
+        screen is StatsScreen ||
+        screen is ArtistDetailScreen ||
+        screen is PlaylistDetailScreen ||
+        screen is EqualizerScreen ||
+        screen is SettingsScreen;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            screenHostsPlayer ? screen : PlayerRouteOverlay(child: screen),
+      ),
+    );
   }
 }

@@ -1,9 +1,19 @@
 package com.chiraitori.pixelplay
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationManager
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothClass
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.AudioDeviceInfo
@@ -11,7 +21,11 @@ import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
+import android.media.RingtoneManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -19,11 +33,36 @@ import android.os.PowerManager
 import android.provider.Settings
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : AudioServiceActivity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val discoveredBluetoothAudioDevices = linkedMapOf<String, BluetoothAudioRoute>()
+    private var bluetoothDeviceEventSink: EventChannel.EventSink? = null
+    private var bluetoothReceiverRegistered = false
+
+    private val bluetoothDeviceReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                BluetoothDevice.ACTION_FOUND -> {
+                    extractBluetoothDevice(intent)
+                        ?.takeIf { it.isAudioOutputCandidate() }
+                        ?.toBluetoothAudioRoute(isConnected = false)
+                        ?.let { route ->
+                            discoveredBluetoothAudioDevices[route.stableId] = route
+                        }
+                }
+                BluetoothAdapter.ACTION_STATE_CHANGED -> {
+                    if (!isBluetoothEnabled()) {
+                        discoveredBluetoothAudioDevices.clear()
+                    }
+                }
+            }
+            emitBluetoothAudioDevices()
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -35,13 +74,97 @@ class MainActivity : AudioServiceActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "getCapabilities" -> result.success(readCapabilities())
+                "startBluetoothDiscovery" -> {
+                    result.success(startBluetoothAudioDiscovery())
+                }
+                "stopBluetoothDiscovery" -> {
+                    stopBluetoothAudioDiscovery()
+                    result.success(null)
+                }
+                "getBluetoothAudioDevices" -> {
+                    result.success(readBluetoothAudioDevices())
+                }
+                "setMediaVolume" -> {
+                    val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                    val maxVolume = audioManager
+                        .getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        .coerceAtLeast(1)
+                    val requestedLevel = call.argument<Number>("level")?.toInt() ?: 0
+                    val level = requestedLevel.coerceIn(0, maxVolume)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, level, 0)
+                    result.success(
+                        mapOf(
+                            "mediaVolume" to audioManager.getStreamVolume(
+                                AudioManager.STREAM_MUSIC,
+                            ),
+                            "mediaVolumeMax" to maxVolume,
+                        ),
+                    )
+                }
                 "openAudioOutputSettings" -> {
                     startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                     result.success(null)
                 }
+                "openBluetoothSettings" -> {
+                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                    result.success(null)
+                }
+                "openWifiSettings" -> {
+                    startActivity(Intent(Settings.ACTION_WIFI_SETTINGS))
+                    result.success(null)
+                }
+                "setRingtone" -> {
+                    val uriValue = call.argument<String>("uri")
+                    val tone = call.argument<String>("tone") ?: "ringtone"
+                    if (uriValue.isNullOrBlank()) {
+                        result.success(mapOf("status" to "error", "message" to "This track is not a local file."))
+                        return@setMethodCallHandler
+                    }
+                    if (!Settings.System.canWrite(this)) {
+                        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        startActivity(intent)
+                        result.success(mapOf("status" to "permission"))
+                        return@setMethodCallHandler
+                    }
+                    val type = when (tone) {
+                        "notification" -> RingtoneManager.TYPE_NOTIFICATION
+                        "alarm" -> RingtoneManager.TYPE_ALARM
+                        else -> RingtoneManager.TYPE_RINGTONE
+                    }
+                    try {
+                        RingtoneManager.setActualDefaultRingtoneUri(this, type, Uri.parse(uriValue))
+                        result.success(mapOf("status" to "success"))
+                    } catch (error: Exception) {
+                        result.success(
+                            mapOf(
+                                "status" to "error",
+                                "message" to (error.localizedMessage ?: "Could not set the ringtone."),
+                            ),
+                        )
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
+
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.chiraitori.pixelplay/bluetooth_audio_devices",
+        ).setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    bluetoothDeviceEventSink = events
+                    ensureBluetoothReceiverRegistered()
+                    emitBluetoothAudioDevices()
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    bluetoothDeviceEventSink = null
+                }
+            },
+        )
 
         // ── Audio meta channel (bitrate / sampleRate / mimeType) ──────────
         // Mirrors Kotlin's MediaControllerSyncStateHolder probe logic:
@@ -151,8 +274,225 @@ class MainActivity : AudioServiceActivity() {
         )
     }
 
+    override fun onDestroy() {
+        stopBluetoothAudioDiscovery()
+        if (bluetoothReceiverRegistered) {
+            runCatching { unregisterReceiver(bluetoothDeviceReceiver) }
+            bluetoothReceiverRegistered = false
+        }
+        bluetoothDeviceEventSink = null
+        super.onDestroy()
+    }
+
+    private fun ensureBluetoothReceiverRegistered() {
+        if (bluetoothReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+            addAction(BluetoothAdapter.ACTION_DISCOVERY_STARTED)
+            addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+            addAction(BluetoothDevice.ACTION_FOUND)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+            addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(bluetoothDeviceReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(bluetoothDeviceReceiver, filter)
+        }
+        bluetoothReceiverRegistered = true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startBluetoothAudioDiscovery(): Boolean {
+        ensureBluetoothReceiverRegistered()
+        discoveredBluetoothAudioDevices.clear()
+        emitBluetoothAudioDevices()
+
+        val adapter = getSystemService(BluetoothManager::class.java)?.adapter ?: return false
+        if (!hasBluetoothScanPermission() || !hasBluetoothConnectPermission()) return false
+        if (!runCatching { adapter.isEnabled }.getOrDefault(false)) return false
+
+        runCatching {
+            if (adapter.isDiscovering) adapter.cancelDiscovery()
+            adapter.startDiscovery()
+        }.onFailure { emitBluetoothAudioDevices() }
+        return runCatching { adapter.isDiscovering }.getOrDefault(false)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopBluetoothAudioDiscovery() {
+        val adapter = getSystemService(BluetoothManager::class.java)?.adapter ?: return
+        if (!hasBluetoothScanPermission()) return
+        runCatching {
+            if (adapter.isDiscovering) adapter.cancelDiscovery()
+        }
+    }
+
+    private fun emitBluetoothAudioDevices() {
+        bluetoothDeviceEventSink?.success(readBluetoothAudioDevices())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun readBluetoothAudioDevices(): List<Map<String, Any?>> {
+        if (!hasBluetoothConnectPermission()) return emptyList()
+
+        val localNames = localBluetoothDeviceNames()
+        val connectedDevices = linkedMapOf<String, BluetoothAudioRoute>()
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .asSequence()
+            .filter { device -> device.isBluetoothAudioOutput() }
+            .mapNotNull { device ->
+                val name = device.productName?.toString()?.trim().orEmpty()
+                if (name.isEmpty() || localNames.any { it.equals(name, ignoreCase = true) }) {
+                    return@mapNotNull null
+                }
+                val address = device.address.trim().takeIf(String::isNotEmpty)
+                BluetoothAudioRoute(
+                    name = name,
+                    address = address,
+                    isConnected = true,
+                    batteryPercent = null,
+                )
+            }
+            .forEach { route -> connectedDevices[route.stableId] = route }
+
+        val merged = linkedMapOf<String, BluetoothAudioRoute>()
+        connectedDevices.values.forEach { route -> merged[route.stableId] = route }
+        discoveredBluetoothAudioDevices.values.forEach { route ->
+            if (localNames.any { it.equals(route.name, ignoreCase = true) }) return@forEach
+            val current = merged[route.stableId]
+            merged[route.stableId] = if (current == null) {
+                route
+            } else {
+                current.copy(batteryPercent = current.batteryPercent ?: route.batteryPercent)
+            }
+        }
+
+        return merged.values
+            .sortedWith(
+                compareByDescending<BluetoothAudioRoute> { it.isConnected }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.name },
+            )
+            .map(BluetoothAudioRoute::toMap)
+    }
+
+    private fun AudioDeviceInfo.isBluetoothAudioOutput(): Boolean {
+        return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                type == AudioDeviceInfo.TYPE_HEARING_AID) ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                (type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    type == AudioDeviceInfo.TYPE_BLE_SPEAKER))
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun BluetoothDevice.toBluetoothAudioRoute(
+        isConnected: Boolean,
+    ): BluetoothAudioRoute? {
+        if (!hasBluetoothConnectPermission()) return null
+        val name = runCatching { name?.trim().orEmpty() }.getOrDefault("")
+        if (name.isEmpty() ||
+            localBluetoothDeviceNames().any { it.equals(name, ignoreCase = true) }
+        ) {
+            return null
+        }
+        val address = runCatching { address?.trim().orEmpty() }
+            .getOrDefault("")
+            .takeIf(String::isNotEmpty)
+        return BluetoothAudioRoute(
+            name = name,
+            address = address,
+            isConnected = isConnected,
+            batteryPercent = readBluetoothBatteryPercent(this),
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun BluetoothDevice.isAudioOutputCandidate(): Boolean {
+        if (!hasBluetoothConnectPermission()) return false
+        val deviceClass = runCatching { bluetoothClass }.getOrNull() ?: return false
+        return deviceClass.majorDeviceClass == BluetoothClass.Device.Major.AUDIO_VIDEO ||
+            deviceClass.hasService(BluetoothClass.Service.RENDER)
+    }
+
+    private fun readBluetoothBatteryPercent(device: BluetoothDevice): Int? {
+        if (!hasBluetoothConnectPermission()) return null
+        return runCatching {
+            val method = device.javaClass.methods.firstOrNull {
+                it.name == "getBatteryLevel" && it.parameterCount == 0
+            } ?: device.javaClass.declaredMethods.firstOrNull {
+                it.name == "getBatteryLevel" && it.parameterCount == 0
+            }
+            (method?.apply { isAccessible = true }?.invoke(device) as? Int)
+                ?.takeIf { it in 0..100 }
+        }.getOrNull()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun localBluetoothDeviceNames(): Set<String> {
+        val adapterName = if (hasBluetoothConnectPermission()) {
+            runCatching {
+                getSystemService(BluetoothManager::class.java)
+                    ?.adapter
+                    ?.name
+                    ?.trim()
+                    .orEmpty()
+            }.getOrDefault("")
+        } else {
+            ""
+        }
+        return buildSet {
+            adapterName.takeIf(String::isNotEmpty)?.let(::add)
+            Build.MODEL.trim().takeIf(String::isNotEmpty)?.let(::add)
+        }
+    }
+
+    private fun isBluetoothEnabled(): Boolean {
+        if (!hasBluetoothConnectPermission()) return false
+        return runCatching {
+            getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
+        }.getOrDefault(false)
+    }
+
+    private fun hasBluetoothConnectPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasBluetoothScanPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extractBluetoothDevice(intent: Intent): BluetoothDevice? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+        } else {
+            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+        }
+    }
+
     private fun readCapabilities(): Map<String, Any?> {
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val mediaVolumeMax = audioManager
+            .getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            .coerceAtLeast(1)
+        val mediaVolume = audioManager
+            .getStreamVolume(AudioManager.STREAM_MUSIC)
+            .coerceIn(0, mediaVolumeMax)
+        val connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val wifiManager =
+            applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val bluetoothManager =
+            getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
         val bluetoothOutput = audioManager
             .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
             .firstOrNull { device ->
@@ -166,6 +506,28 @@ class MainActivity : AudioServiceActivity() {
                                 device.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
                             ))
             }
+        val wifiOn = wifiManager.isWifiEnabled
+        val wifiConnected = connectivityManager.activeNetwork
+            ?.let(connectivityManager::getNetworkCapabilities)
+            ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val wifiSsid = if (wifiConnected) {
+            runCatching {
+                wifiManager.connectionInfo.ssid
+                    ?.trim('"')
+                    ?.takeUnless { it.isBlank() || it == WifiManager.UNKNOWN_SSID }
+            }.getOrNull()
+        } else {
+            null
+        }
+        val bluetoothEnabled = runCatching {
+            bluetoothManager.adapter?.isEnabled == true
+        }.getOrElse {
+            Settings.Global.getInt(
+                contentResolver,
+                Settings.Global.BLUETOOTH_ON,
+                if (bluetoothOutput != null) 1 else 0,
+            ) == 1
+        }
         val packageManager = packageManager
         val decoderTypes = MediaCodecList(MediaCodecList.ALL_CODECS)
             .codecInfos
@@ -187,6 +549,12 @@ class MainActivity : AudioServiceActivity() {
             "abis" to Build.SUPPORTED_ABIS.toList(),
             "outputSampleRate" to audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE),
             "framesPerBuffer" to audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER),
+            "mediaVolume" to mediaVolume,
+            "mediaVolumeMax" to mediaVolumeMax,
+            "wifiOn" to wifiOn,
+            "wifiConnected" to wifiConnected,
+            "wifiSsid" to wifiSsid,
+            "bluetoothEnabled" to bluetoothEnabled,
             "bluetoothActive" to (bluetoothOutput != null),
             "bluetoothName" to bluetoothOutput?.productName?.toString(),
             "decoderTypes" to decoderTypes.toList().sorted(),
@@ -200,6 +568,27 @@ class MainActivity : AudioServiceActivity() {
             "watch" to packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH),
             "lowLatencyAudio" to packageManager.hasSystemFeature(PackageManager.FEATURE_AUDIO_LOW_LATENCY),
             "proAudio" to packageManager.hasSystemFeature(PackageManager.FEATURE_AUDIO_PRO),
+        )
+    }
+}
+
+private data class BluetoothAudioRoute(
+    val name: String,
+    val address: String?,
+    val isConnected: Boolean,
+    val batteryPercent: Int?,
+) {
+    val stableId: String
+        get() = address?.takeIf(String::isNotBlank)
+            ?: "name:${name.lowercase()}"
+
+    fun toMap(): Map<String, Any?> {
+        return mapOf(
+            "id" to stableId,
+            "name" to name,
+            "address" to address,
+            "isConnected" to isConnected,
+            "batteryPercent" to batteryPercent,
         )
     }
 }

@@ -35,6 +35,14 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Week to Date'), findsOneWidget);
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey('recent-history-range-Week to Date')),
+            )
+            .height,
+        44,
+      );
       expect(find.text('Play latest'), findsOneWidget);
       expect(find.text('Shuffle'), findsOneWidget);
       expect(

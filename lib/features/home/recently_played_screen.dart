@@ -78,21 +78,10 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
                         itemBuilder: (context, index) {
                           final range = _HistoryRange.values[index];
                           final selected = range == _range;
-                          return FilterChip(
+                          return _HistoryRangeChip(
+                            label: range.label,
                             selected: selected,
-                            showCheckmark: false,
-                            avatar: selected
-                                ? const Icon(Icons.history_rounded, size: 18)
-                                : null,
-                            label: Text(range.label),
-                            onSelected: (_) => setState(() => _range = range),
-                            side: BorderSide(color: colors.tertiary, width: 2),
-                            selectedColor: colors.tertiary,
-                            labelStyle: TextStyle(
-                              color: selected
-                                  ? colors.onTertiary
-                                  : colors.tertiary,
-                            ),
+                            onTap: () => setState(() => _range = range),
                           );
                         },
                       ),
@@ -256,6 +245,89 @@ class _RecentlyPlayedScreenState extends State<RecentlyPlayedScreen> {
     final prefix = includeYear ? '' : '${weekdays[date.weekday - 1]}, ';
     final year = includeYear ? ', ${date.year}' : '';
     return '$prefix${months[date.month - 1]} ${date.day}$year';
+  }
+}
+
+/// Direct Flutter port of `RecentlyPlayedRangeChip`: a 44dp tertiary outlined
+/// pill whose History icon expands in only for the selected range.
+class _HistoryRangeChip extends StatelessWidget {
+  const _HistoryRangeChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 255);
+    final container = selected ? colors.tertiary : Colors.transparent;
+    final content = selected ? colors.onTertiary : colors.tertiary;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: AnimatedContainer(
+        key: ValueKey('recent-history-range-$label'),
+        duration: duration,
+        curve: Curves.fastOutSlowIn,
+        height: 44,
+        decoration: ShapeDecoration(
+          color: container,
+          shape: StadiumBorder(
+            side: BorderSide(color: colors.tertiary, width: 2),
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    duration: duration,
+                    curve: Curves.fastOutSlowIn,
+                    tween: Tween<double>(end: selected ? 1 : 0),
+                    builder: (context, progress, child) => SizedBox(
+                      width: 26 * progress,
+                      child: ClipRect(
+                        child: Transform.scale(
+                          scale: .82 + progress * .18,
+                          child: Opacity(opacity: progress, child: child),
+                        ),
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.history_outlined,
+                      size: 18,
+                      color: content,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelLarge?.copyWith(color: content),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

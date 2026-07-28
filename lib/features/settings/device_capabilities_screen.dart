@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -48,12 +50,15 @@ class _DeviceCapabilitiesScreenState extends State<DeviceCapabilitiesScreen> {
               final decoders = List<String>.from(
                 data['decoderTypes'] as List? ?? const [],
               );
-              final groups = _groups(data, decoders);
+              final platformName =
+                  data['platformName']?.toString() ??
+                  (Platform.isIOS ? 'iOS' : 'Android');
+              final groups = _groups(data, decoders, platformName);
               return SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 48),
                 sliver: SliverList.list(
                   children: [
-                    _DeviceSummary(data: data),
+                    _DeviceSummary(data: data, platformName: platformName),
                     for (final group in groups) ...[
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 22, 12, 8),
@@ -129,6 +134,7 @@ class _DeviceCapabilitiesScreenState extends State<DeviceCapabilitiesScreen> {
   List<_CapabilityGroup> _groups(
     Map<String, dynamic> data,
     List<String> decoders,
+    String platformName,
   ) {
     bool supports(String fragment) =>
         decoders.any((type) => type.contains(fragment));
@@ -148,9 +154,9 @@ class _DeviceCapabilitiesScreenState extends State<DeviceCapabilitiesScreen> {
           Icons.multiline_chart_rounded,
           true,
         ),
-        const _Capability(
+        _Capability(
           'ReplayGain / equalizer',
-          'Android audio effects pipeline',
+          '$platformName audio effects pipeline',
           Icons.volume_down_rounded,
           true,
         ),
@@ -162,7 +168,9 @@ class _DeviceCapabilitiesScreenState extends State<DeviceCapabilitiesScreen> {
         ),
         _Capability(
           'Pro audio feature',
-          data['proAudio'] == true ? 'Reported by Android' : 'Not reported',
+          data['proAudio'] == true
+              ? 'Reported by $platformName'
+              : 'Not reported',
           Icons.high_quality_rounded,
           data['proAudio'] == true,
         ),
@@ -201,7 +209,7 @@ class _DeviceCapabilitiesScreenState extends State<DeviceCapabilitiesScreen> {
           supports('vorbis'),
         ),
       ]),
-      _CapabilityGroup('Android integration', [
+      _CapabilityGroup('$platformName integration', [
         _Capability(
           'Dynamic color',
           data['dynamicColor'] == true
@@ -254,9 +262,10 @@ class _DeviceCapabilitiesScreenState extends State<DeviceCapabilitiesScreen> {
 }
 
 class _DeviceSummary extends StatelessWidget {
-  const _DeviceSummary({required this.data});
+  const _DeviceSummary({required this.data, required this.platformName});
 
   final Map<String, dynamic> data;
+  final String platformName;
 
   @override
   Widget build(BuildContext context) {
@@ -265,7 +274,12 @@ class _DeviceSummary extends StatelessWidget {
       color: Theme.of(context).colorScheme.primaryContainer,
       child: ListTile(
         contentPadding: const EdgeInsets.all(18),
-        leading: const Icon(Icons.phone_android_rounded, size: 38),
+        leading: Icon(
+          Platform.isIOS
+              ? Icons.phone_iphone_rounded
+              : Icons.phone_android_rounded,
+          size: 38,
+        ),
         title: Text(
           '${data['manufacturer'] ?? ''} ${data['model'] ?? ''}'.trim(),
           style: Theme.of(
@@ -273,7 +287,7 @@ class _DeviceSummary extends StatelessWidget {
           ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          'Android ${data['release'] ?? ''} (API ${data['sdk'] ?? '?'})'
+          '$platformName ${data['release'] ?? ''} (API ${data['sdk'] ?? '?'})'
           '${abis.isEmpty ? '' : '\n${abis.join(', ')}'}',
         ),
       ),

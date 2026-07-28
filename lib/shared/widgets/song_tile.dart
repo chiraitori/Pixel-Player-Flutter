@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/song.dart';
-import '../../core/services/audio_meta_service.dart';
 import '../../core/state/app_controller.dart';
 import '../../features/details/album_detail_screen.dart';
 import '../../features/details/artist_detail_screen.dart';
+import '../../features/player/song_info_bottom_sheet.dart';
 import 'artwork.dart';
+import 'playing_eq_icon.dart';
 
 class SongTile extends StatelessWidget {
   const SongTile({
@@ -137,13 +138,16 @@ class SongTile extends StatelessWidget {
                   ),
                   if (current && !selectionMode) ...[
                     const SizedBox(width: 12),
-                    Icon(
-                      controller.isPlaying
-                          ? Icons.graphic_eq_rounded
-                          : Icons.pause_rounded,
-                      color: contentColor,
-                      size: 18,
-                    ),
+                    controller.isPlaying
+                        ? PlayingEqIcon(
+                            isPlaying: true,
+                            color: contentColor,
+                          )
+                        : Icon(
+                            Icons.pause_rounded,
+                            color: contentColor,
+                            size: 18,
+                          ),
                   ],
                   if (!selectionMode) ...[
                     const SizedBox(width: 12),
@@ -306,63 +310,7 @@ class SongTile extends StatelessWidget {
   }
 
   void _showSongInformation(BuildContext context) {
-    final controller = AppScope.of(context);
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: Artwork(
-                colors: song.colors,
-                size: 56,
-                borderRadius: 12,
-                mediaStoreId: song.mediaStoreId,
-              ),
-              title: Text(
-                song.title,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              subtitle: Text(song.artist),
-              trailing: IconButton(
-                onPressed: () => controller.toggleFavoriteFor(song),
-                icon: Icon(
-                  controller.isFavorite(song)
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                ),
-              ),
-            ),
-            const Divider(),
-            _InfoLine('Album', song.album),
-            _InfoLine('Artist', song.artist),
-            _InfoLine('Genre', song.genre),
-            _InfoLine('Year', '${song.year}'),
-            _InfoLine('Track', '${song.track}'),
-            _InfoLine('Duration', song.durationLabel),
-            if (song.sampleRate != null)
-              _InfoLine('Sample rate', '${song.sampleRate} Hz'),
-            if (song.bitrate != null)
-              _InfoLine('Bitrate', '${(song.bitrate! / 1000).round()} kbps'),
-            _InfoLine(
-              'Format',
-              AudioMetaService.formatFor(
-                filePath: song.path,
-                contentUri: song.contentUri,
-                mimeType: song.mimeType,
-              ),
-            ),
-            if (song.mimeType != null) _InfoLine('MIME type', song.mimeType!),
-            if (song.path != null) _InfoLine('Path', song.path!),
-          ],
-        ),
-      ),
-    );
+    showSongInfoBottomSheet(context: context, song: song);
   }
 }
 
@@ -425,35 +373,6 @@ class _MenuItem extends StatelessWidget {
       title: Text(label),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       onTap: onTap,
-    );
-  }
-}
-
-class _InfoLine extends StatelessWidget {
-  const _InfoLine(this.label, this.value);
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 104,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
     );
   }
 }

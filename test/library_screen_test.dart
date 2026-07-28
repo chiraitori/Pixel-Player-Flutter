@@ -1,5 +1,8 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pixelplayer_flutter/core/models/song.dart';
 import 'package:pixelplayer_flutter/core/state/app_controller.dart';
 import 'package:pixelplayer_flutter/features/library/library_screen.dart';
 
@@ -42,6 +45,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('Songs'), findsOneWidget);
+    final sectionTitle = tester.widget<Text>(find.text('Songs'));
+    expect(
+      sectionTitle.style?.fontVariations,
+      contains(const ui.FontVariation('wdth', 100)),
+    );
     expect(
       tester
           .getSize(find.byKey(const ValueKey('library-section-segment')))
@@ -165,6 +173,95 @@ void main() {
     expect(find.byType(SegmentedButton<bool>), findsOneWidget);
     expect(find.text('Grid'), findsOneWidget);
     expect(find.text('List'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Library tab switcher exposes Kotlin reorder flow', (
+    tester,
+  ) async {
+    final controller = AppController(setupComplete: true)
+      ..songs = MockLibrary.songs
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('library-section-segment')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reorder tabs'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reorder library tabs'), findsOneWidget);
+    expect(find.byType(ReorderableListView), findsOneWidget);
+    expect(find.text('Reset'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Folders navigate as a Kotlin-style directory tree', (
+    tester,
+  ) async {
+    final source = MockLibrary.songs.first;
+    final controller = AppController(setupComplete: true)
+      ..songs = [
+        Song(
+          id: 'folder-tree',
+          title: source.title,
+          artist: source.artist,
+          album: source.album,
+          genre: source.genre,
+          duration: source.duration,
+          colors: source.colors,
+          path: '/Music/Anime/Inside.flac',
+        ),
+      ]
+      ..libraryLoading = false
+      ..libraryCompactMode = true;
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      AppScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: LibraryScreen(
+              onOpenSettings: () {},
+              onOpenAlbum: (_) {},
+              onOpenArtist: (_) {},
+              onOpenPlaylist: (_) {},
+              onOpenGenre: (_) {},
+              onCreatePlaylist: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('library-section-segment')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Folders').last);
+    await tester.tap(find.text('Folders').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Music'));
+    await tester.pumpAndSettle();
+    expect(find.text('Back'), findsOneWidget);
+    expect(find.text('Anime'), findsOneWidget);
+    await tester.tap(find.text('Anime'));
+    await tester.pumpAndSettle();
+    expect(find.text(source.title), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

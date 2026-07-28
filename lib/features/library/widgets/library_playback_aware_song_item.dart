@@ -96,11 +96,13 @@ class LibraryPlaybackAwareSongItem extends StatelessWidget {
                         if (highlighted && !isSelectionMode)
                           AutoScrollingText(
                             text: song.title,
-                            style: (Theme.of(context).textTheme.bodyLarge ?? const TextStyle())
-                                .copyWith(
-                                  color: contentColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            style:
+                                (Theme.of(context).textTheme.bodyLarge ??
+                                        const TextStyle())
+                                    .copyWith(
+                                      color: contentColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                             gradientEdgeColor: containerColor,
                             canScroll: isPlaying,
                           )
@@ -286,16 +288,18 @@ class _PlayingEqIconState extends State<_PlayingEqIcon>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 18,
-      height: 16,
-      child: AnimatedBuilder(
-        animation: Listenable.merge([_phase, _activity]),
-        builder: (context, _) => CustomPaint(
-          painter: _EqualizerPainter(
-            phase: _phase.value * math.pi * 2,
-            activity: Curves.fastOutSlowIn.transform(_activity.value),
-            color: widget.color,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: 18,
+        height: 16,
+        child: AnimatedBuilder(
+          animation: Listenable.merge([_phase, _activity]),
+          builder: (context, _) => CustomPaint(
+            painter: _EqualizerPainter(
+              phase: _phase.value * math.pi * 2,
+              activity: Curves.fastOutSlowIn.transform(_activity.value),
+              color: widget.color,
+            ),
           ),
         ),
       ),

@@ -16,7 +16,7 @@ class AudioMetaService {
   /// Fetches audio metadata for the given content URI or file path.
   /// Returns `null` if the platform does not support this or reading fails.
   static Future<AudioMeta?> fetch(String uriOrPath) async {
-    if (!Platform.isAndroid) return null;
+    if (!Platform.isAndroid && !Platform.isIOS) return null;
     try {
       final result = await _channel.invokeMapMethod<String, dynamic>(
         'getAudioMeta',

@@ -157,18 +157,18 @@ class _AutoScrollingTextState extends State<AutoScrollingText>
           style: widget.style,
         );
 
-        final translateX = -travel * _controller.value;
-        final safeTranslateX = translateX.isFinite ? translateX : 0.0;
-
         final content = widget.canScroll
             ? SizedBox(
                 height: textHeight,
                 child: AnimatedBuilder(
                   animation: _controller,
-                  builder: (context, child) => Transform.translate(
-                    offset: Offset(safeTranslateX, 0),
-                    child: child,
-                  ),
+                  builder: (context, child) {
+                    final translateX = -travel * _controller.value;
+                    return Transform.translate(
+                      offset: Offset(translateX.isFinite ? translateX : 0, 0),
+                      child: child,
+                    );
+                  },
                   child: OverflowBox(
                     alignment: Alignment.centerLeft,
                     minWidth: 0,
@@ -199,42 +199,44 @@ class _AutoScrollingTextState extends State<AutoScrollingText>
             : 0.0;
         final edge = (rawEdge.isFinite ? rawEdge : 0.0).clamp(0.0, 0.5);
 
-        return SizedBox(
-          height: textHeight,
-          child: ClipRect(
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(end: _isScrolling ? 1 : 0),
-              duration: _fadeDuration,
-              builder: (context, leftFade, child) {
-                final safeFade = leftFade.isFinite
-                    ? leftFade.clamp(0.0, 1.0)
-                    : 0.0;
-                return ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (bounds) {
-                    if (bounds.isEmpty ||
-                        !bounds.width.isFinite ||
-                        !bounds.height.isFinite) {
-                      return const LinearGradient(
-                        colors: [Colors.black, Colors.black],
+        return RepaintBoundary(
+          child: SizedBox(
+            height: textHeight,
+            child: ClipRect(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(end: _isScrolling ? 1 : 0),
+                duration: _fadeDuration,
+                builder: (context, leftFade, child) {
+                  final safeFade = leftFade.isFinite
+                      ? leftFade.clamp(0.0, 1.0)
+                      : 0.0;
+                  return ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (bounds) {
+                      if (bounds.isEmpty ||
+                          !bounds.width.isFinite ||
+                          !bounds.height.isFinite) {
+                        return const LinearGradient(
+                          colors: [Colors.black, Colors.black],
+                        ).createShader(bounds);
+                      }
+                      return LinearGradient(
+                        colors: [
+                          Colors.black.withValues(
+                            alpha: (1 - safeFade).clamp(0.0, 1.0),
+                          ),
+                          Colors.black,
+                          Colors.black,
+                          Colors.transparent,
+                        ],
+                        stops: [0, edge, 1 - edge, 1],
                       ).createShader(bounds);
-                    }
-                    return LinearGradient(
-                      colors: [
-                        Colors.black.withValues(
-                          alpha: (1 - safeFade).clamp(0.0, 1.0),
-                        ),
-                        Colors.black,
-                        Colors.black,
-                        Colors.transparent,
-                      ],
-                      stops: [0, edge, 1 - edge, 1],
-                    ).createShader(bounds);
-                  },
-                  child: child,
-                );
-              },
-              child: content,
+                    },
+                    child: child,
+                  );
+                },
+                child: content,
+              ),
             ),
           ),
         );

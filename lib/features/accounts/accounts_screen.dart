@@ -9,6 +9,7 @@ import '../../data/providers/jellyfin/jellyfin_auth_repository.dart';
 import '../../data/providers/navidrome/navidrome_auth_repository.dart';
 import '../../shared/widgets/collapsible_common_top_bar.dart';
 import 'google_drive_connect_screen.dart';
+import 'navidrome_dashboard_screen.dart';
 
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
@@ -115,8 +116,17 @@ class AccountsScreen extends StatelessWidget {
                         controller,
                         service,
                       ),
-                      onManage: () =>
-                          _showAccountDialog(context, service, controller),
+                      onManage: () {
+                        if (service.id == 'navidrome') {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute(
+                              builder: (_) => const NavidromeDashboardScreen(),
+                            ),
+                          );
+                        } else {
+                          _showAccountDialog(context, service, controller);
+                        }
+                      },
                       onLogout: () {
                         if (service.id == 'google_drive') {
                           unawaited(

@@ -10,6 +10,7 @@ import '../../core/theme/genre_theme.dart';
 import '../../core/theme/pixelplay_theme.dart';
 import '../../features/player/full_player.dart';
 import '../../features/player/mini_player.dart';
+import '../../features/player/song_info_bottom_sheet.dart';
 import '../library/quick_fill_screen.dart';
 import '../../shared/widgets/artwork.dart';
 
@@ -932,9 +933,13 @@ class _GenreSongItem extends StatelessWidget {
                 leading: Icon(Icons.queue_music_rounded),
                 title: Text('Add to queue'),
               ),
-              const ListTile(
-                leading: Icon(Icons.info_outline_rounded),
-                title: Text('Song information'),
+              ListTile(
+                leading: const Icon(Icons.info_outline_rounded),
+                title: const Text('Song information'),
+                onTap: () {
+                  Navigator.pop(context);
+                  showSongInfoBottomSheet(context: context, song: song);
+                },
               ),
             ],
           ),

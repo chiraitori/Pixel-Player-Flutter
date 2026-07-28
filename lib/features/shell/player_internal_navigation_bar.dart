@@ -187,8 +187,12 @@ class _CustomNavigationBarItemState extends State<_CustomNavigationBarItem>
   );
   static const _iconSpring = SpringDescription(
     mass: 1,
-    stiffness: 1500,
-    damping: 38.73,
+    // CustomNavigationBarItem.kt uses Spring.StiffnessMedium with
+    // DampingRatioMediumBouncy for the selected-icon scale.  The previous
+    // critically damped 1500 spring made navigation selection look flatter
+    // than the Compose Material 3 Expressive response.
+    stiffness: 500,
+    damping: 22.3607,
   );
 
   @override

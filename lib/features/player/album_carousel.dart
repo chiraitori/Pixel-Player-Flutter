@@ -112,7 +112,9 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedScale(
       scale: widget.isPlaying ? 1 : .95,
-      duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 260),
       curve: Curves.fastOutSlowIn,
       child: Listener(
         onPointerDown: (_) => _userDragActive = true,
@@ -130,8 +132,12 @@ class _AlbumCarouselState extends State<AlbumCarousel> {
             padEnds: widget.viewportFraction >= .999,
             itemBuilder: (context, index) {
               final song = widget.queue[index];
+              // Kotlin's NO_PEEK carousel has no horizontal content padding:
+              // at 385dp wide the playing art spans 337dp (1011px on the
+              // reference device). AnimatedScale then produces the native
+              // 0.95 paused artwork, centered 25px in from each edge.
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                padding: EdgeInsets.zero,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: index == _currentIndex && widget.onArtworkTap != null
