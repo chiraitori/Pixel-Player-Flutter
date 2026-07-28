@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -537,13 +538,6 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
 
   Future<void> _exportPlaylist(BuildContext context, Playlist playlist) async {
     final safeName = playlist.name.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
-    final path = await FilePicker.saveFile(
-      dialogTitle: 'Export playlist',
-      fileName: '$safeName.m3u',
-      type: FileType.custom,
-      allowedExtensions: const ['m3u'],
-    );
-    if (path == null) return;
     final contents = StringBuffer('#EXTM3U\n');
     for (final song in playlist.songs) {
       contents.writeln(
@@ -551,7 +545,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       );
       contents.writeln(song.path ?? song.contentUri ?? '');
     }
-    await File(path).writeAsString(contents.toString());
+    final path = await FilePicker.saveFile(
+      dialogTitle: 'Export playlist',
+      fileName: '$safeName.m3u',
+      bytes: Uint8List.fromList(utf8.encode(contents.toString())),
+      type: FileType.custom,
+      allowedExtensions: const ['m3u'],
+    );
+    if (path == null) return;
     if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,

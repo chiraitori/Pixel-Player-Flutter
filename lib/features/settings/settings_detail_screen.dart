@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -640,14 +642,15 @@ class _SettingsDetailScreenState extends State<SettingsDetailScreen> {
   }
 
   Future<void> _createBackup(AppController controller) async {
+    final backup = controller.createBackupJson();
     final path = await FilePicker.saveFile(
       dialogTitle: 'Create PixelPlay backup',
       fileName: 'pixelplay-backup.json',
+      bytes: Uint8List.fromList(utf8.encode(backup)),
       type: FileType.custom,
       allowedExtensions: const ['json'],
     );
     if (path == null) return;
-    await File(path).writeAsString(controller.createBackupJson(), flush: true);
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
