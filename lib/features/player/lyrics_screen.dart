@@ -1239,25 +1239,39 @@ class _TimedLyricText extends StatelessWidget {
   final bool active;
   final TextAlign textAlign;
 
+  static final RegExp _leadingVocalTag = RegExp(
+    r'^(?:v\d+[:\s]*|\[v\d+\]\s*)',
+    caseSensitive: false,
+  );
+
+  static String _cleanText(String text) =>
+      text.replaceAll(_leadingVocalTag, '').trim();
+
   @override
   Widget build(BuildContext context) {
+    final cleanLineText = _cleanText(line.text);
     if (line.words.isEmpty || !active) {
-      return Text(line.text, textAlign: textAlign);
+      return Text(cleanLineText, textAlign: textAlign);
     }
     final inherited = DefaultTextStyle.of(context).style;
     final activeColor = Theme.of(context).colorScheme.onPrimaryContainer;
     return Text.rich(
       TextSpan(
         children: [
-          for (final word in line.words)
-            TextSpan(
-              text: '${word.startsNewWord ? ' ' : ''}${word.text}',
-              style: inherited.copyWith(
-                color: word.time <= position
-                    ? activeColor
-                    : activeColor.withValues(alpha: .46),
-              ),
-            ),
+          for (var i = 0; i < line.words.length; i++) ...[
+            () {
+              final word = line.words[i];
+              final rawWordText = i == 0 ? _cleanText(word.text) : word.text;
+              return TextSpan(
+                text: '${word.startsNewWord && i > 0 ? ' ' : ''}$rawWordText',
+                style: inherited.copyWith(
+                  color: word.time <= position
+                      ? activeColor
+                      : activeColor.withValues(alpha: .46),
+                ),
+              );
+            }(),
+          ],
         ],
       ),
       textAlign: textAlign,

@@ -469,8 +469,15 @@ class LyricsParser {
         '${hundredths.toString().padLeft(2, '0')}';
   }
 
-  static String _stripWordTimestamps(String value) =>
-      value.replaceAll(_wordTimestamp, '');
+  static final RegExp _leadingVocalTag = RegExp(
+    r'^(?:v\d+[:\s]*|\[v\d+\]\s*)',
+    caseSensitive: false,
+  );
+
+  static String _stripWordTimestamps(String value) {
+    final stripped = value.replaceAll(_wordTimestamp, '');
+    return stripped.replaceAll(_leadingVocalTag, '').trim();
+  }
 
   static final RegExp _kana = RegExp(
     r'[\u3040-\u309F\u30A0-\u30FF\uFF66-\uFF9F]',
