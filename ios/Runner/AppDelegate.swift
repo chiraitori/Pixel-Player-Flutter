@@ -181,8 +181,10 @@ import UserNotifications
         }
 
         let sampleRate = audioTrack.formatDescriptions
-          .compactMap { $0 as? CMAudioFormatDescription }
-          .compactMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mSampleRate }
+          .compactMap {
+            CMAudioFormatDescriptionGetStreamBasicDescription($0)?
+              .pointee.mSampleRate
+          }
           .first
           .map { Int($0.rounded()) }
         let bitrate = audioTrack.estimatedDataRate > 0
