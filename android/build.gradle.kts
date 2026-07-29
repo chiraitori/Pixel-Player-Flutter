@@ -15,7 +15,7 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
     pluginManager.withPlugin("com.android.library") {
-        extensions.configure<com.android.build.gradle.LibraryExtension> {
+        extensions.configure<com.android.build.api.dsl.LibraryExtension> {
             compileSdk = 35
             buildToolsVersion = "36.0.0"
             if (namespace == null) {
@@ -32,14 +32,6 @@ subprojects {
     }
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-    afterEvaluate {
-        extensions.findByType<com.android.build.gradle.LibraryExtension>()?.apply {
-            compileOptions {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
-            }
-        }
     }
 }
 subprojects {
