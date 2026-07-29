@@ -531,14 +531,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
       type: FileType.custom,
       allowedExtensions: const ['m3u', 'm3u8'],
       dialogTitle: 'Import M3U playlist',
-      withData: true,
     );
     final file = result?.files.singleOrNull;
     if (file == null) return;
 
     try {
-      final bytes = file.bytes;
-      if (bytes == null) throw StateError('The selected playlist has no data');
+      final bytes = await file.readAsBytes();
       final contents = utf8.decode(bytes);
       final imported = PlaylistTransferService.parseM3u(
         contents,
