@@ -34,6 +34,16 @@ subprojects {
         compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
+
+gradle.projectsEvaluated {
+    rootProject.subprojects.forEach { subproject ->
+        subproject.tasks.withType<JavaCompile>().configureEach {
+            sourceCompatibility = JavaVersion.VERSION_17.toString()
+            targetCompatibility = JavaVersion.VERSION_17.toString()
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }
