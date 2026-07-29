@@ -171,31 +171,31 @@ import UserNotifications
       url = URL(fileURLWithPath: uri)
     }
 
-    DispatchQueue.global(qos: .userInitiated).async {
+    Task {
       let asset = AVURLAsset(url: url)
-      asset.loadValuesAsynchronously(forKeys: ["tracks"]) {
-        guard asset.statusOfValue(forKey: "tracks", error: nil) == .loaded,
-              let audioTrack = asset.tracks(withMediaType: .audio).first else {
-          DispatchQueue.main.async { result(nil) }
+      do {
+        guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
+          await MainActor.run { result(nil) }
           return
         }
 
-        let sampleRate = audioTrack.formatDescriptions
-          .compactMap {
-            CMAudioFormatDescriptionGetStreamBasicDescription($0)?
-              .pointee.mSampleRate
-          }
+        let formatDescriptions = try await audioTrack.load(.formatDescriptions)
+        let sampleRate = formatDescriptions
+          .compactMap { $0.audioStreamBasicDescription?.mSampleRate }
           .first
           .map { Int($0.rounded()) }
-        let bitrate = audioTrack.estimatedDataRate > 0
-          ? Int(audioTrack.estimatedDataRate.rounded())
+        let estimatedDataRate = try await audioTrack.load(.estimatedDataRate)
+        let bitrate = estimatedDataRate > 0
+          ? Int(estimatedDataRate.rounded())
           : nil
         let metadata: [String: Any] = [
           "mimeType": self.mimeType(for: url) ?? NSNull(),
           "bitrate": bitrate ?? NSNull(),
           "sampleRate": sampleRate ?? NSNull(),
         ]
-        DispatchQueue.main.async { result(metadata) }
+        await MainActor.run { result(metadata) }
+      } catch {
+        await MainActor.run { result(nil) }
       }
     }
   }
