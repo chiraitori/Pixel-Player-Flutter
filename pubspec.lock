@@ -258,10 +258,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_taglib
-      sha256: ec3e5169d9145e8005ede50d2075006ed00236d287ce3d3d877977dc78230ff5
+      sha256: cbcf5899d161d7b5826a4962788ce893fc2a4b706144606f79fa2b2186256f9b
       url: "https://pub.dev"
     source: hosted
-    version: "1.4.1"
+    version: "1.5.2"
   flutter_test:
     dependency: "direct dev"
     description: flutter
