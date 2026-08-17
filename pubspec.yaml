@@ -18,7 +18,7 @@ dependencies:
   path: ^1.9.1
   on_audio_query: ^2.9.0
   just_audio: ^0.10.6
-  dynamic_color: ^1.8.1
+  dynamic_color: ^1.9.0
   flutter_svg: ^2.3.0
   device_info_plus: ^13.2.0
   url_launcher: ^6.3.2
